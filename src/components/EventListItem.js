@@ -64,7 +64,11 @@ export default function EventListItem({ event }) {
 
       <div className="flex shrink-0 flex-col items-end justify-between gap-1 py-0.5 text-right">
         {showCountdown && <CountdownTimer startTime={event.startTime} />}
-        {mounted && <div className="text-xs text-discord-muted">UTC: {formatUtc(event.startTime)}</div>}
+        {mounted && (
+          <div className="hidden text-xs text-discord-muted sm:block">
+            UTC: {formatUtc(event.startTime)}
+          </div>
+        )}
         <ChevronRight className="mt-auto h-4 w-4 text-discord-muted" />
       </div>
     </Link>

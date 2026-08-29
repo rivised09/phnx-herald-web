@@ -11,13 +11,13 @@ export default function Header() {
           </div>
           <div className="leading-tight">
             <div className="text-[15px] font-bold tracking-wide">Phoenix Herald</div>
-            <div className="text-[11px] text-discord-muted">Manage Alliance Events</div>
+            <div className="hidden text-[11px] text-discord-muted sm:block">Manage Alliance Events</div>
           </div>
         </Link>
         <nav className="flex items-center gap-1.5">
           <Link
             href="/dashboard"
-            className="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-discord-muted transition hover:bg-discord-raised hover:text-discord-text"
+            className="hidden rounded-md px-2.5 py-1.5 text-[13px] font-medium text-discord-muted transition hover:bg-discord-raised hover:text-discord-text sm:inline-block"
           >
             Dashboard
           </Link>
