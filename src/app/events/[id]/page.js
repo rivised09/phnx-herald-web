@@ -40,83 +40,83 @@ export default async function EventDetailPage({ params }) {
   const duration = formatDuration(event.startTime, event.endTime);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-2xl">
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-discord-muted transition hover:text-discord-text">
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to dashboard
       </Link>
 
-      <div className="mt-4 rounded-xl border border-l-4 border-black/40 bg-discord-surface p-6 shadow-lg border-l-blurple">
+      <div className="mt-3 rounded-lg border border-l-4 border-black/40 bg-discord-surface p-5 shadow-lg border-l-blurple">
         {isScheduled && (
-          <div className="mb-3 text-sm text-discord-muted">
+          <div className="mb-2.5 text-sm text-discord-muted">
             Starts in <CountdownTimer startTime={event.startTime} className="font-semibold text-discord-text" />
           </div>
         )}
 
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <h1 className="text-2xl font-bold leading-tight uppercase tracking-wide">
-            {isCancelled && <XCircle className="mr-1 inline h-5 w-5 text-red-400" />}
+        <div className="mb-2.5 flex items-start justify-between gap-3">
+          <h1 className="text-xl font-bold leading-tight uppercase tracking-wide">
+            {isCancelled && <XCircle className="mr-1 inline h-4 w-4 text-red-400" />}
             ▰ {event.title}
           </h1>
           <StatusBadge status={event.status} />
         </div>
 
         {event.description && (
-          <p className="mb-5 whitespace-pre-wrap text-sm leading-relaxed text-discord-text/90">
+          <p className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-discord-text/90">
             {event.description}
           </p>
         )}
 
-        <div className="space-y-4">
-          <div className="rounded-lg bg-discord-bg-darker/40 px-4 py-3">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-discord-muted">
+        <div className="space-y-2.5">
+          <div className="rounded-md bg-discord-bg-darker/40 px-3.5 py-2.5">
+            <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
               Scheduled for
             </div>
             <TimezoneInfo date={event.startTime} />
           </div>
 
           {duration && (
-            <div className="rounded-lg bg-discord-bg-darker/40 px-4 py-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-discord-muted">
+            <div className="rounded-md bg-discord-bg-darker/40 px-3.5 py-2.5">
+              <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
                 Duration
               </div>
               <div className="inline-flex items-center gap-1.5 text-sm font-medium text-discord-text">
-                <Timer className="h-4 w-4 text-discord-muted" />
+                <Timer className="h-3.5 w-3.5 text-discord-muted" />
                 {duration}
               </div>
             </div>
           )}
 
           {event.location && (
-            <div className="rounded-lg bg-discord-bg-darker/40 px-4 py-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-discord-muted">
+            <div className="rounded-md bg-discord-bg-darker/40 px-3.5 py-2.5">
+              <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
                 Location
               </div>
               <div className="inline-flex items-center gap-1.5 text-sm text-discord-text">
-                <MapPin className="h-4 w-4 text-discord-muted" />
+                <MapPin className="h-3.5 w-3.5 text-discord-muted" />
                 {event.location}
               </div>
             </div>
           )}
 
-          <div className="rounded-lg bg-discord-bg-darker/40 px-4 py-3">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-discord-muted">
+          <div className="rounded-md bg-discord-bg-darker/40 px-3.5 py-2.5">
+            <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
               Event Type
             </div>
             <div className="inline-flex items-center gap-1.5 text-sm text-discord-text">
               {event.entityType === 'EXTERNAL' ? (
                 <>
-                  <Globe className="h-4 w-4 text-discord-muted" />
+                  <Globe className="h-3.5 w-3.5 text-discord-muted" />
                   External Event
                 </>
               ) : event.entityType === 'VOICE' ? (
                 <>
-                  <Volume2 className="h-4 w-4 text-discord-muted" />
+                  <Volume2 className="h-3.5 w-3.5 text-discord-muted" />
                   Voice Channel Event
                 </>
               ) : (
                 <>
-                  <Clapperboard className="h-4 w-4 text-discord-muted" />
+                  <Clapperboard className="h-3.5 w-3.5 text-discord-muted" />
                   Stage Event
                 </>
               )}
@@ -127,7 +127,7 @@ export default async function EventDetailPage({ params }) {
         <EventActions event={event} />
 
         <div
-          className={`mt-6 flex items-center gap-1.5 border-t border-black/30 pt-3 text-xs ${
+          className={`mt-5 flex items-center gap-1.5 border-t border-black/30 pt-2.5 text-xs ${
             isCancelled ? 'font-semibold text-red-400' : 'text-discord-muted'
           }`}
         >

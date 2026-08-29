@@ -91,12 +91,12 @@ export default function EventForm({ event: initialEvent, mode = 'create' }) {
   }
 
   const inputClass =
-    'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-2 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+    'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
 
-  const labelClass = 'mb-1 block text-sm font-medium text-discord-muted';
+  const labelClass = 'mb-0.5 block text-[13px] font-medium text-discord-muted';
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className={labelClass}>Event Title *</label>
         <input
@@ -116,12 +116,12 @@ export default function EventForm({ event: initialEvent, mode = 'create' }) {
           value={form.description}
           onChange={(e) => setField('description', e.target.value)}
           placeholder="Describe the event..."
-          rows={4}
+          rows={3}
           className={inputClass}
         />
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <DateTimePicker
           label="Start Time *"
           value={form.startTime}
@@ -135,7 +135,7 @@ export default function EventForm({ event: initialEvent, mode = 'create' }) {
         />
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className={labelClass}>Event Type</label>
           <select
@@ -197,14 +197,14 @@ export default function EventForm({ event: initialEvent, mode = 'create' }) {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-blurple px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blurple-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-blurple px-4 py-2 text-sm font-semibold text-white transition hover:bg-blurple-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? (isEdit ? 'Saving...' : 'Publishing...') : isEdit ? 'Save Changes' : 'Publish Event'}
         </button>
         <button
           type="button"
           onClick={() => router.back()}
-          className="rounded-md bg-discord-raised px-5 py-2.5 text-sm font-semibold text-discord-text transition hover:bg-discord-bg-darker"
+          className="rounded-md bg-discord-raised px-4 py-2 text-sm font-semibold text-discord-text transition hover:bg-discord-bg-darker"
         >
           Cancel
         </button>

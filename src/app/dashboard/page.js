@@ -10,7 +10,16 @@ const VALID_STATUS = ['SCHEDULED', 'ACTIVE', 'CANCELLED', 'COMPLETED'];
 export default async function DashboardPage({ searchParams }) {
   const sp = await searchParams;
   const requested = String(sp?.status || '').toUpperCase();
-  const activeStatus = VALID_STATUS.includes(requested) ? requested : '';
+  const hasParam = sp?.status !== undefined && sp?.status !== '';
+
+  let filter = '';
+  if (requested === 'ALL') {
+    filter = '';
+  } else if (VALID_STATUS.includes(requested)) {
+    filter = requested;
+  } else if (!hasParam) {
+    filter = 'SCHEDULED';
+  }
 
   let allEvents = [];
   let error = null;
@@ -27,10 +36,10 @@ export default async function DashboardPage({ searchParams }) {
     if (counts[e.status] !== undefined) counts[e.status] += 1;
   });
 
-  const events = activeStatus ? allEvents.filter((e) => e.status === activeStatus) : allEvents;
+  const events = filter ? allEvents.filter((e) => e.status === filter) : allEvents;
 
   const tabs = [
-    { key: '', label: `All (${allEvents.length})` },
+    { key: 'ALL', label: `All (${allEvents.length})` },
     { key: 'SCHEDULED', label: `Scheduled (${counts.SCHEDULED})` },
     { key: 'ACTIVE', label: `Active (${counts.ACTIVE})` },
     { key: 'CANCELLED', label: `Cancelled (${counts.CANCELLED})` },
@@ -39,36 +48,36 @@ export default async function DashboardPage({ searchParams }) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Manage Alliance Events</h1>
-          <p className="mt-1 text-sm text-discord-muted">
+          <h1 className="text-xl font-bold tracking-tight">Manage Alliance Events</h1>
+          <p className="text-xs text-discord-muted">
             Events sync instantly to your Discord channel as announcement cards and scheduled events.
           </p>
         </div>
         <Link
           href="/events/new"
-          className="rounded-md bg-blurple px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blurple/30 transition hover:bg-blurple-dark"
+          className="rounded-md bg-blurple px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm shadow-blurple/30 transition hover:bg-blurple-dark"
         >
           + Create Event
         </Link>
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-discord-muted">
-          <Funnel className="h-3.5 w-3.5" />
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+          <Funnel className="h-3 w-3" />
           Filter
         </span>
         {tabs.map((tab) => {
-          const isActive = activeStatus === tab.key;
+          const isActive = tab.key === 'ALL' ? filter === '' : filter === tab.key;
           return (
             <Link
-              key={tab.key || 'all'}
-              href={tab.key ? `/dashboard?status=${tab.key}` : '/dashboard'}
+              key={tab.key}
+              href={`/dashboard?status=${tab.key}`}
               aria-current={isActive ? 'page' : undefined}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+              className={`rounded-full px-3 py-1 text-[13px] font-medium transition ${
                 isActive
-                  ? 'bg-blurple text-white shadow-md shadow-blurple/30'
+                  ? 'bg-blurple text-white shadow-sm shadow-blurple/30'
                   : 'bg-discord-raised text-discord-muted hover:bg-discord-bg-darker hover:text-discord-text'
               }`}
             >
@@ -79,9 +88,9 @@ export default async function DashboardPage({ searchParams }) {
       </div>
 
       {!error && allEvents.length > 0 && (
-        <p className="mb-3 text-xs text-discord-muted">
+        <p className="mb-2 text-xs text-discord-muted">
           Showing {events.length} of {allEvents.length} event{allEvents.length === 1 ? '' : 's'}
-          {activeStatus ? ` · filter: ${activeStatus.toLowerCase()}` : ''}
+          {filter ? ` · filter: ${filter.toLowerCase()}` : ''}
         </p>
       )}
 
@@ -92,16 +101,16 @@ export default async function DashboardPage({ searchParams }) {
       )}
 
       {!error && events.length === 0 && (
-        <div className="rounded-xl border border-dashed border-black/40 bg-discord-surface/50 px-6 py-16 text-center">
+        <div className="rounded-xl border border-dashed border-black/40 bg-discord-surface/50 px-6 py-12 text-center">
           <div className="mb-2 flex justify-center text-discord-muted">
-            <CalendarDays className="h-12 w-12" />
+            <CalendarDays className="h-11 w-11" />
           </div>
           <p className="mb-1 font-semibold">
-            {activeStatus ? `No ${activeStatus.toLowerCase()} events found` : 'No events found'}
+            {filter ? `No ${filter.toLowerCase()} events found` : 'No events found'}
           </p>
-          <p className="mb-4 text-sm text-discord-muted">
-            {activeStatus
-              ? 'Events filtered by this status will appear here.'
+          <p className="mb-3 text-sm text-discord-muted">
+            {filter
+              ? 'Events in this status will appear here.'
               : 'Create your first alliance event to announce it on Discord.'}
           </p>
           <Link
