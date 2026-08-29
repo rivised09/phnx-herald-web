@@ -19,35 +19,35 @@ export default function EventsView({ events }) {
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-3 flex justify-end">
         <div className="inline-flex rounded-md border border-black/40 bg-discord-bg-darker p-0.5">
           <button
             onClick={() => setView('cards')}
-            className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition ${
               view === 'cards'
                 ? 'bg-blurple text-white'
                 : 'text-discord-muted hover:text-discord-text'
             }`}
           >
-            <LayoutGrid className="h-3.5 w-3.5" />
+            <LayoutGrid className="h-3 w-3" />
             Cards
           </button>
           <button
             onClick={() => setView('list')}
-            className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition ${
               view === 'list'
                 ? 'bg-blurple text-white'
                 : 'text-discord-muted hover:text-discord-text'
             }`}
           >
-            <List className="h-3.5 w-3.5" />
+            <List className="h-3 w-3" />
             List
           </button>
         </div>
       </div>
 
       {view === 'cards' ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           {events.map((event) => (
             <EventCard key={event.id} event={event} />
           ))}

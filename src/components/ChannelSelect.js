@@ -9,7 +9,7 @@ function ChannelTypeIcon({ type }) {
 }
 
 const inputClass =
-  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-2 text-sm outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
 
 export default function ChannelSelect({ channels = [], value, onChange, loading, error, placeholder = 'Search channels…' }) {
   const [open, setOpen] = useState(false);

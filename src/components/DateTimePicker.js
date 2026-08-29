@@ -13,9 +13,9 @@ import TimeInput from './TimeInput';
 const QUICK_TIMES = ['08:00', '12:00', '16:00', '18:00', '20:00', '23:00'];
 
 const inputClass =
-  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-2 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
 
-const labelClass = 'mb-1 block text-sm font-medium text-discord-muted';
+const labelClass = 'mb-0.5 block text-[13px] font-medium text-discord-muted';
 
 export default function DateTimePicker({ value, label, onChange, required = false }) {
   const [date, setDate] = useState(() => (value ? toDateInputValue(value) : ''));
@@ -37,12 +37,12 @@ export default function DateTimePicker({ value, label, onChange, required = fals
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <label className={labelClass}>{label}</label>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-discord-muted">
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
             Date
           </span>
           <input
@@ -54,7 +54,7 @@ export default function DateTimePicker({ value, label, onChange, required = fals
           />
         </div>
         <div>
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-discord-muted">
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
             Time · 24-hour
           </span>
           <TimeInput value={time} required={required} onChange={(t) => apply(date, t)} />
@@ -80,7 +80,7 @@ export default function DateTimePicker({ value, label, onChange, required = fals
       </div>
 
       {previewIso && (
-        <div className="rounded-md border border-black/30 bg-discord-bg-darker/60 px-3 py-2 text-xs">
+        <div className="rounded-md border border-black/30 bg-discord-bg-darker/60 px-3 py-1.5 text-xs">
           <div className="text-discord-text">
             Your time: {formatLocalLong(previewIso)}
           </div>

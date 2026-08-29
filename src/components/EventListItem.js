@@ -28,7 +28,7 @@ export default function EventListItem({ event }) {
   return (
     <Link
       href={`/events/${event.id}`}
-      className={`group flex items-stretch gap-4 rounded-xl border border-l-4 bg-discord-surface px-5 py-4 shadow-sm ${accent}`}
+      className={`group flex items-stretch gap-3 rounded-lg border border-l-4 bg-discord-surface px-4 py-3 shadow-sm ${accent}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -40,7 +40,7 @@ export default function EventListItem({ event }) {
           <p className="mt-1 truncate text-xs text-discord-muted">{event.description}</p>
         )}
 
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-discord-muted">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[11px] text-discord-muted">
           {mounted && (
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays className="h-3.5 w-3.5 shrink-0" />

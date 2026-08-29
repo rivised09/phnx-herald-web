@@ -17,7 +17,7 @@ function digitsToMilitary(digits) {
 }
 
 const inputClass =
-  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-2 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
 
 export default function TimeInput({ value, onChange, required = false }) {
   const [draft, setDraft] = useState(value || '');
