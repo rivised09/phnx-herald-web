@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-discord-bg text-discord-text antialiased;
+}
+
+::selection {
+  background: rgba(88, 101, 242, 0.4);
+  color: #f2f3f5;
+}
+
+:where(a, button, [role='button']):focus-visible {
+  outline: 2px solid #5865f2;
+  outline-offset: 2px;
+}
