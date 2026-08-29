@@ -63,8 +63,8 @@ export default async function DashboardPage({ searchParams }) {
         </Link>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+      <div className="mb-3 -mx-4 flex items-center gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+        <span className="mr-1 hidden items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-discord-muted sm:inline-flex">
           <Funnel className="h-3 w-3" />
           Filter
         </span>
@@ -75,7 +75,7 @@ export default async function DashboardPage({ searchParams }) {
               key={tab.key}
               href={`/dashboard?status=${tab.key}`}
               aria-current={isActive ? 'page' : undefined}
-              className={`rounded-full px-3 py-1 text-[13px] font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[13px] font-medium transition ${
                 isActive
                   ? 'bg-blurple text-white shadow-sm shadow-blurple/30'
                   : 'bg-discord-raised text-discord-muted hover:bg-discord-bg-darker hover:text-discord-text'
