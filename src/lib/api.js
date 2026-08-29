@@ -1,4 +1,10 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+function normalizeBaseUrl(url) {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return 'http://localhost:3001';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+const API_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_URL}${path}`, {
