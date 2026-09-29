@@ -2,6 +2,7 @@ import '@fontsource-variable/inter';
 import './globals.css';
 import Header from '../components/Layout/Header';
 import Footer from '../components/Layout/Footer';
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata = {
   title: 'Phoenix Herald — Manage Alliance Events',
@@ -15,6 +16,7 @@ export default function RootLayout({ children }) {
         <Header />
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">{children}</main>
         <Footer />
+        <Analytics />
       </body>
     </html>
   );
