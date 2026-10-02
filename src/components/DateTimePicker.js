@@ -13,9 +13,9 @@ import TimeInput from './TimeInput';
 const QUICK_TIMES = ['08:00', '12:00', '16:00', '18:00', '20:00', '23:00'];
 
 const inputClass =
-  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm text-discord-text outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+  'w-full rounded-md border border-gray-800 bg-discord-bg-darker px-3 py-1.5 text-sm text-neutral-100 outline-none transition placeholder:text-gray-600 focus:border-gray-500 focus:ring-1 focus:ring-gray-500';
 
-const labelClass = 'mb-0.5 block text-[13px] font-medium text-discord-muted';
+const labelClass = 'mb-1 block font-mono text-[11px] uppercase tracking-[0.2em] text-gray-500';
 
 export default function DateTimePicker({ value, label, onChange, required = false }) {
   const [date, setDate] = useState(() => (value ? toDateInputValue(value) : ''));
@@ -42,7 +42,7 @@ export default function DateTimePicker({ value, label, onChange, required = fals
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+          <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
             Date
           </span>
           <input
@@ -54,7 +54,7 @@ export default function DateTimePicker({ value, label, onChange, required = fals
           />
         </div>
         <div>
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-discord-muted">
+          <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
             Time · 24-hour
           </span>
           <TimeInput value={time} required={required} onChange={(t) => apply(date, t)} />
@@ -62,16 +62,16 @@ export default function DateTimePicker({ value, label, onChange, required = fals
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs text-discord-muted">Quick:</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">Quick:</span>
         {QUICK_TIMES.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => apply(date, t)}
-            className={`rounded border px-2 py-0.5 text-xs transition ${
+            className={`rounded-full border px-2 py-0.5 font-mono text-xs transition ${
               time === t
-                ? 'border-blurple bg-blurple/20 font-semibold text-blurple'
-                : 'border-black/40 bg-discord-bg-darker text-discord-muted hover:text-discord-text'
+                ? 'border-transparent bg-gray-100 font-medium text-neutral-950'
+                : 'border-gray-800 bg-transparent text-gray-500 hover:border-gray-600 hover:text-neutral-200'
             }`}
           >
             {t}
@@ -80,12 +80,12 @@ export default function DateTimePicker({ value, label, onChange, required = fals
       </div>
 
       {previewIso && (
-        <div className="rounded-md border border-black/30 bg-discord-bg-darker/60 px-3 py-1.5 text-xs">
-          <div className="text-discord-text">
+        <div className="rounded-md border border-gray-800 bg-discord-bg-darker/60 px-3 py-1.5 text-xs">
+          <div className="text-neutral-100">
             Your time: {formatLocalLong(previewIso)}
           </div>
-          <div className="text-discord-muted">
-            UTC: <span className="font-medium text-discord-text">{formatUtc(previewIso)}</span>
+          <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-gray-500">
+            UTC: <span className="font-medium text-gray-300">{formatUtc(previewIso)}</span>
           </div>
         </div>
       )}

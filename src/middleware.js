@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 
 const ACCESS_CODE = process.env.DASHBOARD_ACCESS_CODE;
+const AUTH_DISABLED = process.env.AUTH_ENABLED === 'false';
 
 export function middleware(request) {
+  if (AUTH_DISABLED) return NextResponse.next();
   if (!ACCESS_CODE) return NextResponse.next();
 
   const url = request.nextUrl.clone();
@@ -28,5 +30,10 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/events/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/events/:path*',
+    '/players/:path*',
+    '/settings/:path*',
+  ],
 };

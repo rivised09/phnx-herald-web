@@ -1,13 +1,12 @@
-function normalizeBaseUrl(url) {
-  const trimmed = (url || '').trim();
-  if (!trimmed) return 'http://localhost:3001';
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-const API_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
+import { getApiBaseUrl } from './apiBase';
 
 async function request(path, options = {}) {
-  const res = await fetch(`${API_URL}${path}`, {
+  let url = path;
+  if (typeof window === 'undefined') {
+    url = `${getApiBaseUrl()}${path}`;
+  }
+
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     cache: 'no-store',
     ...options,
@@ -41,6 +40,21 @@ export function getEvent(id) {
 
 export function getChannels() {
   return request('/api/channels');
+}
+
+export function getPlayerSurvey() {
+  return request('/api/sheets/survey');
+}
+
+export function getSettings() {
+  return request('/api/settings');
+}
+
+export function updateSettings(patch) {
+  return request('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
 }
 
 export function createEvent(payload) {

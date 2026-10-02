@@ -63,7 +63,7 @@ export default function EventActions({ event, onCancelled }) {
           <>
             <Link
               href={`/events/${event.id}/edit`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-discord-raised px-3.5 py-1.5 text-sm font-semibold text-discord-text transition hover:bg-discord-bg-darker"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-neutral-900 px-3.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-200 transition hover:border-gray-600 hover:text-neutral-100"
             >
               <Pencil className="h-4 w-4" />
               Edit
@@ -71,7 +71,7 @@ export default function EventActions({ event, onCancelled }) {
             <button
               onClick={handleCancel}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/90 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 px-3.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-amber-400 transition hover:bg-amber-500/10 disabled:opacity-50"
             >
               <Ban className="h-4 w-4" />
               Cancel Event
@@ -81,7 +81,7 @@ export default function EventActions({ event, onCancelled }) {
         <button
           onClick={handleDelete}
           disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-md bg-red-500/90 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 px-3.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
         >
           <Trash2 className="h-4 w-4" />
           Delete
