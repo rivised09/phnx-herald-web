@@ -9,7 +9,7 @@ function ChannelTypeIcon({ type }) {
 }
 
 const inputClass =
-  'w-full rounded-md border border-black/40 bg-discord-bg-darker px-3 py-1.5 text-sm outline-none transition focus:border-blurple focus:ring-1 focus:ring-blurple';
+  'w-full rounded-md border border-gray-800 bg-discord-bg-darker px-3 py-1.5 text-sm outline-none transition placeholder:text-gray-600 focus:border-gray-500 focus:ring-1 focus:ring-gray-500';
 
 export default function ChannelSelect({ channels = [], value, onChange, loading, error, placeholder = 'Search channels…' }) {
   const [open, setOpen] = useState(false);
@@ -55,8 +55,9 @@ export default function ChannelSelect({ channels = [], value, onChange, loading,
   return (
     <div ref={containerRef} className="relative">
       {loading ? (
-        <div className="rounded-md border border-black/40 bg-discord-bg-darker px-3 py-2 text-sm text-discord-muted">
-          Loading channels…
+        <div className="space-y-1.5" role="status" aria-label="Loading channels">
+          <div className="h-9 animate-pulse rounded-md border border-gray-800 bg-discord-bg-darker" />
+          <div className="h-3 w-3/4 animate-pulse rounded bg-gray-800" />
         </div>
       ) : error ? (
         <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -76,23 +77,23 @@ export default function ChannelSelect({ channels = [], value, onChange, loading,
             }}
             className={`${inputClass} flex cursor-pointer items-center justify-between`}
           >
-            <span className={selected || value ? 'flex items-center text-discord-text' : 'text-discord-muted'}>
+            <span className={selected || value ? 'flex items-center text-neutral-100' : 'text-gray-500'}>
               {selected && <ChannelTypeIcon type={selected.type} />}
               {display}
             </span>
-            <ChevronDown className="h-4 w-4 text-discord-muted" />
+            <ChevronDown className="h-4 w-4 text-gray-500" />
           </div>
 
           {open && (
-            <div className="absolute z-20 mt-1 w-full rounded-md border border-black/40 bg-discord-bg-darker shadow-xl">
-              <div className="border-b border-black/30 p-2">
+            <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-800 bg-neutral-950 shadow-xl">
+              <div className="border-b border-gray-800 p-2">
                 <input
                   autoFocus
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Type to filter…"
-                  className="w-full rounded border border-black/40 bg-discord-bg px-2 py-1.5 text-sm text-discord-text outline-none transition focus:border-blurple"
+                  className="w-full rounded border border-gray-800 bg-discord-bg px-2 py-1.5 text-sm text-neutral-100 outline-none transition placeholder:text-gray-600 focus:border-gray-500"
                 />
               </div>
               <ul className="max-h-56 overflow-y-auto py-1">
@@ -101,7 +102,7 @@ export default function ChannelSelect({ channels = [], value, onChange, loading,
                     <button
                       type="button"
                       onClick={() => handleSelect(null)}
-                      className="flex w-full items-center px-3 py-2 text-left text-sm text-discord-muted transition hover:bg-discord-raised"
+                      className="flex w-full items-center px-3 py-2 text-left text-sm text-gray-500 transition hover:bg-gray-800/40 hover:text-neutral-100"
                     >
                       <X className="mr-1.5 h-4 w-4" />
                       Clear selection
@@ -109,15 +110,15 @@ export default function ChannelSelect({ channels = [], value, onChange, loading,
                   </li>
                 )}
                 {filtered.length === 0 && (
-                  <li className="px-3 py-2 text-sm text-discord-muted">No channels match.</li>
+                  <li className="px-3 py-2 text-sm text-gray-500">No channels match.</li>
                 )}
                 {filtered.map((c) => (
                   <li key={c.id}>
                     <button
                       type="button"
                       onClick={() => handleSelect(c.id)}
-                      className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-discord-raised ${
-                        c.id === value ? 'font-semibold text-discord-text' : 'text-discord-text/90'
+                      className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-gray-800/40 ${
+                        c.id === value ? 'bg-gray-800/60 font-medium text-neutral-100' : 'text-neutral-100/90'
                       }`}
                     >
                       <ChannelTypeIcon type={c.type} />

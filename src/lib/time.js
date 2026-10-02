@@ -75,8 +75,15 @@ export const STATUS_LABELS = {
 };
 
 export const STATUS_COLORS = {
-  SCHEDULED: 'bg-blurple',
-  ACTIVE: 'bg-green-500',
-  CANCELLED: 'bg-red-500',
-  COMPLETED: 'bg-slate-500',
+  SCHEDULED: 'border-gray-700 text-gray-300',
+  ACTIVE: 'border-emerald-500/40 text-emerald-400',
+  CANCELLED: 'border-red-500/40 text-red-400',
+  COMPLETED: 'border-gray-800 text-gray-500',
+};
+
+export const STATUS_DOTS = {
+  SCHEDULED: 'bg-gray-300',
+  ACTIVE: 'bg-emerald-400',
+  CANCELLED: 'bg-red-400',
+  COMPLETED: 'bg-gray-600',
 };

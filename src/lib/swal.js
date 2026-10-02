@@ -1,17 +1,17 @@
 import Swal from 'sweetalert2';
 
 const base = {
-  background: '#2b2d31',
-  color: '#f2f3f5',
+  background: '#1c1c1c',
+  color: '#fafafa',
   width: 430,
   buttonsStyling: false,
   customClass: {
-    popup: 'rounded-xl border border-black/50 shadow-2xl',
-    title: 'text-base font-bold',
-    htmlContainer: 'text-sm leading-relaxed text-discord-muted px-2',
-    confirmButton: 'rounded-md px-4 py-2 text-sm font-semibold text-white',
+    popup: 'rounded-lg border border-gray-800 shadow-2xl',
+    title: 'text-base font-semibold',
+    htmlContainer: 'text-sm leading-relaxed text-gray-400 px-2',
+    confirmButton: 'rounded-md px-4 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-950',
     cancelButton:
-      'rounded-md bg-discord-raised px-4 py-2 text-sm font-semibold text-discord-muted hover:text-discord-text',
+      'rounded-md border border-gray-800 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-gray-400 hover:text-neutral-100',
     icon: 'border-0',
     actions: 'gap-2 px-4 pb-4',
     overlay: 'backdrop-blur-[2px] bg-black/60',
@@ -34,8 +34,10 @@ export async function askConfirmation({ title, text, confirmText, danger = false
     focusConfirm: false,
     customClass: {
       ...base.customClass,
-      confirmButton: `rounded-md px-4 py-2 text-sm font-semibold text-white transition ${
-        danger ? 'bg-red-500 hover:bg-red-400' : 'bg-amber-500 hover:bg-amber-400'
+      confirmButton: `rounded-md px-4 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.2em] transition ${
+        danger
+          ? 'bg-red-500 text-white hover:bg-red-400'
+          : 'bg-gray-100 text-neutral-950 hover:bg-white'
       }`,
     },
   });
