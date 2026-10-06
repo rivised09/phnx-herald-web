@@ -42,6 +42,7 @@ async function proxy(req) {
 
 export const GET = proxy;
 export const PATCH = proxy;
+export const DELETE = proxy;
 export const POST = async (req) => {
   const url = `${getApiBaseUrl()}/api/settings/fetch`;
   const store = await cookies();

@@ -57,6 +57,13 @@ export function updateSettings(patch) {
   });
 }
 
+export function deleteSavedRowRoster(id) {
+  return request('/api/settings', {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+  });
+}
+
 export function startSnapshotFetch(date) {
   return request('/api/settings', {
     method: 'POST',
