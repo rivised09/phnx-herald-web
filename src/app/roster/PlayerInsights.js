@@ -14,6 +14,8 @@ import {
   Hammer,
   Users,
   Scale,
+  Coins,
+  Skull,
   Info,
 } from 'lucide-react';
 import PlayerRadar from './PlayerRadar';
@@ -136,8 +138,8 @@ function blocksFor(tab, sections) {
   return [...known, ...unknown];
 }
 
-function StatBlocks({ tab, sections, date }) {
-  const blocks = blocksFor(tab, sections);
+function StatBlocks({ tab, sections, date, exclude = [] }) {
+  const blocks = blocksFor(tab, sections).filter((block) => !exclude.includes(block.section));
   if (!blocks.length) return null;
   return (
     <Section
@@ -161,6 +163,69 @@ function StatBlocks({ tab, sections, date }) {
                 </div>
               ))}
             </dl>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function WarStats({ sections }) {
+  const section = sections.find((item) => item.section === 'War Stats');
+  if (!section) return null;
+  const icons = {
+    'Kill to Heal Ratio': Swords,
+    'Merit to Power Ratio': Scale,
+    Merits: Coins,
+    'Units Dead': Skull,
+    'Units Healed': Shield,
+    'Units Killed': Swords,
+  };
+  const rows = section.rows.filter((row) => icons[row.label]);
+  if (!rows.length) return null;
+  return (
+    <Section title="War Stats">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-3">
+        {rows.map((row) => {
+          const Icon = icons[row.label];
+          return (
+            <div key={row.label} className="bg-discord-bg-darker px-3 py-3">
+              <Icon className="h-7 w-7 text-white" strokeWidth={1.7} />
+              <p className="mt-2 text-xs text-gray-400">{row.label}</p>
+              <p className="mt-1 font-mono text-sm text-neutral-100">{row.value}</p>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function MeritStats({ sections }) {
+  const section = sections.find((item) => item.section === 'Advanced War Stats');
+  if (!section) return null;
+  const wanted = [
+    ['Cavalry Merits', '/icons/cavalry.svg'],
+    ['Infantry Merits', '/icons/infantry.svg'],
+    ['Mage Merits', '/icons/mage.svg'],
+    ['Marksman Merits', '/icons/archer.svg'],
+  ];
+  const stats = wanted
+    .map(([label, icon]) => ({
+      label,
+      icon,
+      value: section.rows.find((row) => row.label === label)?.value,
+    }))
+    .filter((item) => item.value !== undefined);
+  if (!stats.length) return null;
+  return (
+    <Section title="Merits">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-4">
+        {stats.map((stat) => (
+          <div key={stat.label} className="bg-discord-bg-darker px-3 py-3">
+            <img src={stat.icon} alt="" className="h-8 w-8 brightness-0 invert" />
+            <p className="mt-2 text-xs text-gray-400">{stat.label}</p>
+            <p className="mt-1 font-mono text-sm text-neutral-100">{stat.value}</p>
           </div>
         ))}
       </div>
@@ -474,6 +539,8 @@ export default function PlayerInsights({
       <div>
         <PlayerRadar radar={radar} />
         <PlayerStatsChart history={history} />
+        <WarStats sections={sections} />
+        <MeritStats sections={sections} />
         <StatBlocks tab="overview" sections={sections} date={sectionsDate} />
       </div>
     );
@@ -538,6 +605,8 @@ export default function PlayerInsights({
         <>
           <PlayerRadar radar={radar} />
           <PlayerStatsChart history={history} />
+          <WarStats sections={sections} />
+          <MeritStats sections={sections} />
 
           <section className="border-t border-gray-800 px-4 py-4">
             {/* Two columns: the profile reads left, and the activity it is
