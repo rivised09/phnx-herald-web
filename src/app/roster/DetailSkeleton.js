@@ -24,7 +24,7 @@ export function PlayerDetailSkeleton() {
         Loading player
       </span>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-surface">
+      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
         <div className="relative overflow-hidden border-b border-gray-800">
           <div
             aria-hidden="true"
@@ -96,7 +96,7 @@ export function AllianceDetailSkeleton() {
         Loading alliance
       </span>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-surface">
+      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
         <div className="border-b border-gray-800 px-4 py-4">
           <div className="flex items-center gap-3">
             <Shield className="h-5 w-5 text-gray-400" aria-hidden="true" />
