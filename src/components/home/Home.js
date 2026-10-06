@@ -5,6 +5,7 @@ import { AlertTriangle, Database, KeyRound, Radio, ServerCrash } from 'lucide-re
 import RosterSearch from './RosterSearch';
 import RosterSection from './RosterSection';
 import RosterTabs from './RosterTabs';
+import ServerStats from './ServerStats';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
 import { buildSuggestions } from './suggestions';
 
@@ -148,6 +149,21 @@ export default function Home({ data, loading, error, onRetry }) {
                     emptyLabel="No players found for these alliances."
                     showHeader={false}
                     framed={false}
+                  />
+                ),
+              },
+              {
+                // The same rows read as a server: totals, the two leaderboards
+                // and how power is spread, without another request.
+                key: 'stats',
+                label: 'Server stats',
+                count: total,
+                panel: (
+                  <ServerStats
+                    key="stats"
+                    alliances={alliances}
+                    players={players}
+                    snapshot={data.snapshot}
                   />
                 ),
               },

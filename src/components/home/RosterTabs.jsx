@@ -1,13 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import { ChartBar, Shield, Users } from 'lucide-react';
+
+const TAB_ICONS = {
+  alliances: Shield,
+  players: Users,
+  stats: ChartBar,
+};
 
 /**
- * The home roster's category switch, drawn the way a browser draws its tab
- * strip: the tabs sit in a recessed bar along the top of a single panel and
- * the selected one drops its bottom edge over the bar's rule, so its surface
- * reads as continuous with the content underneath. Only the selected panel is
- * rendered, which keeps a long roster to one paginated table per page load.
+ * The home roster's category switch: a segmented control sitting in a
+ * recessed track rather than a browser tab strip. The selected segment fills
+ * with the accent, keeps its count on a matching chip and carries an icon, so
+ * the switch reads as a control instead of as a flat strip of labels.
  *
  * `tabs` carries `{ key, label, count, panel }`; the panel node is built by
  * the caller, so this component never has to know what a roster row is.
@@ -23,10 +29,11 @@ export default function RosterTabs({ tabs = [] }) {
       <div
         role="tablist"
         aria-label="Roster categories"
-        className="flex items-end gap-1 border-b border-gray-800 bg-black/30 px-2 pt-2"
+        className="flex flex-wrap items-center gap-1.5 border-b border-gray-800 bg-gradient-to-b from-black/50 to-black/20 p-2"
       >
         {tabs.map((tab) => {
           const selected = tab.key === current.key;
+          const Icon = TAB_ICONS[tab.key];
           return (
             <button
               key={tab.key}
@@ -36,14 +43,28 @@ export default function RosterTabs({ tabs = [] }) {
               aria-selected={selected}
               aria-controls={`roster-panel-${tab.key}`}
               onClick={() => setActive(tab.key)}
-              className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-t-md px-3.5 font-mono uppercase tracking-[0.2em] transition ${
+              className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 font-mono uppercase tracking-[0.16em] transition ${
                 selected
-                  ? 'relative -mb-px border-x border-t border-gray-800 bg-discord-surface py-2.5 text-[11px] text-neutral-100'
-                  : 'border border-transparent py-2 text-[10px] text-gray-400 hover:bg-white/[0.05] hover:text-neutral-200'
+                  ? 'border-amber-500/40 bg-amber-500/15 text-amber-100 shadow-[0_10px_22px_-16px_rgba(245,158,11,0.9)]'
+                  : 'border-transparent text-gray-400 hover:border-gray-800 hover:bg-white/[0.04] hover:text-neutral-200'
               }`}
             >
-              <span className="truncate">{tab.label}</span>
-              <span className="text-neutral-400">{tab.count}</span>
+              {Icon ? (
+                <Icon
+                  className={`h-3.5 w-3.5 shrink-0 transition ${
+                    selected ? 'text-amber-300' : 'text-gray-600 group-hover:text-gray-500'
+                  }`}
+                  aria-hidden="true"
+                />
+              ) : null}
+              <span className="truncate text-[11px]">{tab.label}</span>
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] tabular-nums transition ${
+                  selected ? 'bg-amber-400/20 text-amber-100' : 'bg-gray-800/80 text-gray-500'
+                }`}
+              >
+                {tab.count}
+              </span>
             </button>
           );
         })}

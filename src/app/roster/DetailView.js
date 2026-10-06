@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, Shield } from 'lucide-react';
 import DetailSearch from '../../components/home/DetailSearch';
 import Avatar from './Avatar';
+import MemberList from './MemberList';
 import PlayerInsights from './PlayerInsights';
 import SnapshotPicker from './SnapshotPicker';
 
@@ -53,7 +54,7 @@ export default function DetailView({ kind, data }) {
         {/* The home page's lookup box, kept on the far right of every roster
             page so the way out of the current account is always one keystroke
             away. */}
-        <div className="ml-auto w-full max-w-sm">
+        <div className="ml-auto w-full max-w-none sm:max-w-sm">
           <DetailSearch />
         </div>
       </div>
@@ -69,25 +70,29 @@ export default function DetailView({ kind, data }) {
               aria-hidden="true"
               className="pointer-events-none absolute -top-24 right-[-5rem] h-56 w-56 rounded-full bg-amber-400/10 blur-3xl"
             />
-            <div className="relative flex items-start gap-4 px-4 py-5">
-              <Avatar
-                name={data.name}
-                src={data.avatar}
-                className="h-16 w-16"
-                textClass="text-lg"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                  Lord / Player
-                </p>
-                <h1 className="mt-1 truncate text-xl font-semibold text-neutral-100">
-                  {data.name}
-                </h1>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Chip label="Rank" value={`#${data.rank ?? '—'}`} accent />
-                  <Chip label="Power" value={data.power || '—'} accent />
-                  <Chip label="Alliance" value={data.alliance?.name || 'Unaffiliated'} />
-                  <Chip label="Captured" value={data.snapshotDate} />
+            {/* Stacked on phones: the date control drops onto its own row
+                under the identity instead of squeezing the name and chips. */}
+            <div className="relative flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-start">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <Avatar
+                  name={data.name}
+                  src={data.avatar}
+                  className="h-16 w-16 shrink-0"
+                  textClass="text-lg"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
+                    Lord / Player
+                  </p>
+                  <h1 className="mt-1 truncate text-xl font-semibold text-neutral-100">
+                    {data.name}
+                  </h1>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <Chip label="Rank" value={`#${data.rank ?? '—'}`} accent />
+                    <Chip label="Power" value={data.power || '—'} accent />
+                    <Chip label="Alliance" value={data.alliance?.name || 'Unaffiliated'} />
+                    <Chip label="Captured" value={data.snapshotDate} />
+                  </div>
                 </div>
               </div>
 
@@ -162,27 +167,7 @@ export default function DetailView({ kind, data }) {
           />
         )}
 
-        {!player && (
-          <div className="border-t border-gray-800">
-            <div className="border-b border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-              Members · {data.players.length}
-            </div>
-            <div className="divide-y divide-gray-800/80">
-              {data.players.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/roster/player/${item.id}`}
-                  className="flex items-center justify-between px-4 py-2.5 text-sm transition hover:bg-gray-500/5"
-                >
-                  <span className="text-neutral-100">{item.name}</span>
-                  <span className="font-mono text-[10px] text-gray-500">
-                    #{item.rank || '—'} · {item.power || '—'}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        {!player && <MemberList players={data.players} />}
       </div>
     </div>
   );
