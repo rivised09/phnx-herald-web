@@ -211,9 +211,13 @@ function ProfileRing({ signal }) {
   const filled = circumference * Math.min(Math.max(score, 0), 1);
 
   return (
-    <li className="flex flex-col items-center">
-      <div className="relative h-[104px] w-[104px]">
-        <svg viewBox="0 0 104 104" className="h-full w-full -rotate-90" aria-hidden="true">
+    <li className="flex w-full min-w-0 flex-col items-center">
+      <div className="relative mx-auto aspect-square w-full max-w-[104px]">
+        <svg
+          viewBox="0 0 104 104"
+          className="absolute inset-0 h-full w-full -rotate-90"
+          aria-hidden="true"
+        >
           <circle
             cx="52"
             cy="52"
@@ -233,17 +237,19 @@ function ProfileRing({ signal }) {
             strokeDasharray={`${filled} ${circumference - filled}`}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-2.5 text-center">
-          <span className="font-mono text-[9px] uppercase leading-tight tracking-[0.1em] text-neutral-300">
-            {signal.label}
-          </span>
+        {/* The reading sits in the middle of its own ring; the name of what is
+            being read sits underneath, where it has room to wrap. */}
+        <div className="absolute inset-0 flex items-center justify-center px-2 text-center">
           <span
-            className={`mt-1 font-mono text-[10px] uppercase tracking-[0.1em] ${LEVEL_TEXT[signal.level] || LEVEL_TEXT.unknown}`}
+            className={`font-mono text-[11px] uppercase leading-tight tracking-[0.08em] ${LEVEL_TEXT[signal.level] || LEVEL_TEXT.unknown}`}
           >
             {signal.level}
           </span>
         </div>
       </div>
+      <span className="mt-2 block text-center font-mono text-[9px] uppercase leading-tight tracking-[0.1em] text-neutral-300">
+        {signal.label}
+      </span>
     </li>
   );
 }
@@ -556,7 +562,7 @@ export default function PlayerInsights({
                   </div>
                 ) : null}
 
-                <ul className="mt-4 flex flex-wrap gap-4">
+                <ul className="mt-4 grid grid-cols-5 gap-x-2 gap-y-4 sm:gap-x-4">
                   {profile.map((signal) => (
                     <ProfileRing key={signal.key} signal={signal} />
                   ))}
