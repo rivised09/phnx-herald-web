@@ -21,19 +21,19 @@ import Radar3D from '../../components/Radar3D';
 import { getPlayerSurvey } from '../../lib/api';
 
 const PLAYSTYLE_AXES = [
-  { label: 'Farming', re: /farm/i, icon: '/icons/farming.svg' },
-  { label: 'Fighting', re: /fight|war/i, icon: '/icons/fighting.svg' },
-  { label: 'Building', re: /build/i, icon: '/icons/building.svg' },
+  { label: 'Farming', re: /farm/i, icon: '/icons/farming.svg', tone: 'text-amber-400' },
+  { label: 'Fighting', re: /fight|war/i, icon: '/icons/fighting.svg', tone: 'text-red-400' },
+  { label: 'Building', re: /build/i, icon: '/icons/building.svg', tone: 'text-orange-400' },
 ];
 
 const TROOP_TYPES = [
-  { label: 'Infantry', icon: '/icons/infantry.svg' },
-  { label: 'Mage', icon: '/icons/mage.svg' },
-  { label: 'Archer', icon: '/icons/archer.svg' },
-  { label: 'Cavalry', icon: '/icons/cavalry.svg' },
+  { label: 'Infantry', icon: '/icons/infantry.svg', tone: 'text-sky-400' },
+  { label: 'Mage', icon: '/icons/mage.svg', tone: 'text-purple-400' },
+  { label: 'Archer', icon: '/icons/archer.svg', tone: 'text-emerald-400' },
+  { label: 'Cavalry', icon: '/icons/cavalry.svg', tone: 'text-amber-400' },
 ];
 
-const TROOP_ICON_MAP = new Map(TROOP_TYPES.map((t) => [t.label.toLowerCase(), t.icon]));
+const TROOP_ICON_MAP = new Map(TROOP_TYPES.map((t) => [t.label.toLowerCase(), t]));
 
 const TABS = [
   { id: 'players', label: 'Player Information', icon: Users },
@@ -124,10 +124,32 @@ function slotLabel(index) {
   return `${pad(start)}:00-${pad(start + SLOT_HOURS)}:00`;
 }
 
+/**
+ * Icons are solid silhouettes, so they render as CSS masks. Colour comes from
+ * the element's own background (bg-current), which lets a `text-*` class on the
+ * caller drive the tint. A plain <img> cannot do this: an SVG loaded through
+ * <img> is isolated from the document, so currentColor never resolves.
+ */
 function MonoIcon({ src, alt = '', className = '' }) {
+  const mask = {
+    WebkitMaskImage: `url(${src})`,
+    maskImage: `url(${src})`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+  };
+
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} aria-hidden={alt ? undefined : true} className={className} />
+    <span
+      role={alt ? 'img' : undefined}
+      aria-label={alt || undefined}
+      aria-hidden={alt ? undefined : true}
+      className={`inline-block bg-current ${className}`}
+      style={mask}
+    />
   );
 }
 
@@ -247,7 +269,7 @@ function TroopTile({ type, count, total }) {
       title={`${type.label}: ${count} of ${total} members (${pct}%)`}
       className="flex items-center gap-2.5 rounded-md border border-gray-800/80 bg-discord-bg-darker/40 px-3 py-2 transition hover:border-gray-700"
     >
-      <MonoIcon src={type.icon} className="h-7 w-7 shrink-0 brightness-0 invert opacity-75" />
+      <MonoIcon src={type.icon} className={`h-7 w-7 shrink-0 opacity-80 ${type.tone}`} />
       <div className="min-w-0">
         <div className="flex items-baseline gap-1.5">
           <span className="font-mono text-lg font-semibold leading-none text-neutral-100">
@@ -588,15 +610,12 @@ export default function PlayersPage() {
                       ].map((row) => {
                         const name = String(row.value || '').trim();
                         if (!name) return null;
-                        const icon = TROOP_ICON_MAP.get(name.toLowerCase());
+                        const troop = TROOP_ICON_MAP.get(name.toLowerCase());
                         return (
                           <div key={row.tag} className="flex items-center gap-2">
-                            {icon && (
+                            {troop && (
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-                                <MonoIcon
-                                  src={icon}
-                                  className="h-4 w-4 brightness-0 invert opacity-80"
-                                />
+                                <MonoIcon src={troop.icon} className={`h-4 w-4 ${troop.tone}`} />
                               </span>
                             )}
                             <span className="text-[13px] text-neutral-100">{name}</span>
@@ -650,10 +669,7 @@ export default function PlayersPage() {
                                     on ? 'opacity-95' : 'opacity-25'
                                   }`}
                                 >
-                                  <MonoIcon
-                                    src={axis.icon}
-                                    className="h-4 w-4 brightness-0 invert"
-                                  />
+                                  <MonoIcon src={axis.icon} className={`h-4 w-4 ${axis.tone}`} />
                                 </span>
                                 <span
                                   className={`font-mono text-[11px] uppercase tracking-wider ${

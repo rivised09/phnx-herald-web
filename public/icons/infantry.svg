@@ -5,7 +5,7 @@
 <svg height="800px" width="800px" version="1.1" id="_x32_" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
 	 viewBox="0 0 512 512"  xml:space="preserve">
 <style type="text/css">
-	.st0{fill:#000000;}
+	.st0{fill:currentColor;}
 </style>
 <g>
 	<path class="st0" d="M391.861,70.97L256,0L120.118,70.97L27.881,45.624c0,0,0,147.01,0,253.466C27.881,405.544,205.307,512,256,512
