@@ -34,6 +34,7 @@ export const config = {
     '/dashboard/:path*',
     '/events/:path*',
     '/players/:path*',
+    '/tracking/:path*',
     '/settings/:path*',
   ],
 };

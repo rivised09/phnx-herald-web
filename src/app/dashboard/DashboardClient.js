@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarDays, RefreshCw } from 'lucide-react';
+import { CalendarDays, Plus, RefreshCw } from 'lucide-react';
 import EventsView from '../../components/EventsView';
 import { getEvents } from '../../lib/api';
 import DashboardSkeleton from './DashboardSkeleton';
@@ -59,13 +59,22 @@ export default function DashboardClient({ initialFilter = 'SCHEDULED' }) {
 
   return (
     <div>
-      <div className="mb-5">
-        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500">
-          01 / Events
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500">
+            01 / Events
+          </div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">
+            Manage Alliance Events
+          </h1>
         </div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">
-          Manage Alliance Events
-        </h1>
+        <Link
+          href="/events/new"
+          className="group inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-300 bg-gray-100 px-3 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-950 shadow-[0_1px_0_0_rgba(255,255,255,0.15)_inset,0_1px_2px_rgba(0,0,0,0.4)] transition hover:-translate-y-px hover:border-white hover:bg-white hover:shadow-[0_1px_0_0_rgba(255,255,255,0.25)_inset,0_3px_8px_rgba(0,0,0,0.5)] active:translate-y-0"
+        >
+          <Plus className="h-3.5 w-3.5 transition-transform group-hover:rotate-90" />
+          Create Event
+        </Link>
       </div>
 
       <div className="mb-3 -mx-4 flex items-center gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
