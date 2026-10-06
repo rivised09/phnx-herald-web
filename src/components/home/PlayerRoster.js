@@ -50,7 +50,7 @@ export default function PlayerRoster({ players, bare = false, itemType = 'player
         return (
           <li
             key={player.id}
-            className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition hover:bg-gray-500/5"
+            className="flex items-center gap-3 px-3 py-2 transition hover:bg-gray-500/5 sm:px-4"
           >
             <Link
               href={
@@ -58,9 +58,9 @@ export default function PlayerRoster({ players, bare = false, itemType = 'player
                   ? `/roster/alliance/${encodeURIComponent(player.id)}`
                   : `/roster/player/${encodeURIComponent(player.id)}`
               }
-              className="flex min-w-[10rem] flex-1 items-center gap-2.5"
+              className="flex min-w-0 flex-1 items-center gap-2"
             >
-              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-700 bg-gray-500/10 font-mono text-[10px] text-gray-400">
+              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-700 bg-gray-500/10 font-mono text-[9px] text-gray-400">
                 {player.name.slice(0, 2).toUpperCase()}
                 {imageSrc(player.avatar) && (
                   <img
@@ -77,9 +77,7 @@ export default function PlayerRoster({ players, bare = false, itemType = 'player
                   />
                 )}
               </span>
-              <span className="truncate text-[13px] font-medium text-neutral-100">
-                {player.name}
-              </span>
+              <span className="truncate text-xs text-neutral-100">{player.name}</span>
             </Link>
 
             {stats.length === 0 ? (
@@ -87,13 +85,15 @@ export default function PlayerRoster({ players, bare = false, itemType = 'player
                 No stats yet
               </span>
             ) : (
-              <dl className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              <dl className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 sm:gap-x-4">
                 {stats.map(([key, value]) => (
                   <div key={key} className="flex items-baseline gap-1.5">
-                    <dt className="font-mono text-[9px] uppercase tracking-[0.18em] text-gray-600">
+                    <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">
                       {humanize(key)}
                     </dt>
-                    <dd className="font-mono text-[12px] text-neutral-100">{String(value)}</dd>
+                    <dd className="font-mono text-[11px] tabular-nums text-neutral-100">
+                      {String(value)}
+                    </dd>
                   </div>
                 ))}
               </dl>

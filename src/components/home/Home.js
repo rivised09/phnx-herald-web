@@ -140,6 +140,7 @@ export default function Home({ data, loading, error, onRetry }) {
               {
                 key: 'players',
                 label: 'Lords / Players',
+                shortLabel: 'Lords',
                 count: players.length,
                 panel: (
                   <RosterSection
@@ -157,6 +158,7 @@ export default function Home({ data, loading, error, onRetry }) {
                 // and how power is spread, without another request.
                 key: 'stats',
                 label: 'Server stats',
+                shortLabel: 'Stats',
                 count: total,
                 panel: (
                   <ServerStats

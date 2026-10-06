@@ -29,7 +29,7 @@ export default function RosterTabs({ tabs = [] }) {
       <div
         role="tablist"
         aria-label="Roster categories"
-        className="flex flex-wrap items-center gap-1.5 border-b border-gray-800 bg-gradient-to-b from-black/50 to-black/20 p-2"
+        className="grid grid-cols-3 gap-1.5 border-b border-gray-800 bg-gradient-to-b from-black/50 to-black/20 p-2 sm:flex sm:flex-wrap sm:items-center"
       >
         {tabs.map((tab) => {
           const selected = tab.key === current.key;
@@ -43,7 +43,7 @@ export default function RosterTabs({ tabs = [] }) {
               aria-selected={selected}
               aria-controls={`roster-panel-${tab.key}`}
               onClick={() => setActive(tab.key)}
-              className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 font-mono uppercase tracking-[0.16em] transition ${
+              className={`group inline-flex w-full min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border px-1.5 py-2 font-mono uppercase transition sm:w-auto sm:justify-start sm:gap-2 sm:px-3 ${
                 selected
                   ? 'border-amber-500/50 text-amber-300'
                   : 'border-transparent text-gray-400 hover:border-gray-800 hover:bg-white/[0.03] hover:text-neutral-200'
@@ -51,15 +51,20 @@ export default function RosterTabs({ tabs = [] }) {
             >
               {Icon ? (
                 <Icon
-                  className={`h-3.5 w-3.5 shrink-0 transition ${
+                  className={`hidden h-3.5 w-3.5 shrink-0 transition sm:block ${
                     selected ? 'text-amber-400' : 'text-gray-600 group-hover:text-gray-500'
                   }`}
                   aria-hidden="true"
                 />
               ) : null}
-              <span className="truncate text-[11px]">{tab.label}</span>
+              <span className="truncate text-[9px] uppercase tracking-[0.1em] sm:hidden">
+                {tab.shortLabel || tab.label}
+              </span>
+              <span className="hidden truncate text-[11px] tracking-[0.16em] sm:inline">
+                {tab.label}
+              </span>
               <span
-                className={`text-[10px] tabular-nums transition ${
+                className={`shrink-0 text-[9px] tabular-nums transition sm:text-[10px] ${
                   selected ? 'text-amber-400' : 'text-gray-600'
                 }`}
               >

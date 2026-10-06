@@ -238,16 +238,17 @@ function ProfileRing({ signal }) {
           />
         </svg>
         {/* The reading sits in the middle of its own ring; the name of what is
-            being read sits underneath, where it has room to wrap. */}
-        <div className="absolute inset-0 flex items-center justify-center px-2 text-center">
+            being read sits underneath, where it has room to wrap. Both step
+            down on phones, where five rings only have ~60px each. */}
+        <div className="absolute inset-0 flex items-center justify-center px-1 text-center sm:px-2">
           <span
-            className={`font-mono text-[11px] uppercase leading-tight tracking-[0.08em] ${LEVEL_TEXT[signal.level] || LEVEL_TEXT.unknown}`}
+            className={`font-mono text-[9px] uppercase leading-tight tracking-[0.04em] sm:text-[11px] sm:tracking-[0.08em] ${LEVEL_TEXT[signal.level] || LEVEL_TEXT.unknown}`}
           >
             {signal.level}
           </span>
         </div>
       </div>
-      <span className="mt-2 block text-center font-mono text-[9px] uppercase leading-tight tracking-[0.1em] text-neutral-300">
+      <span className="mt-1.5 block break-words text-center font-mono text-[8px] uppercase leading-tight tracking-[0.06em] text-neutral-300 sm:mt-2 sm:text-[9px] sm:tracking-[0.1em]">
         {signal.label}
       </span>
     </li>
