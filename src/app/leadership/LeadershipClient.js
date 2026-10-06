@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Info, Search } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { getSettings, updateSettings } from '../../lib/api';
+import { deleteSavedRowRoster, getSettings, updateSettings } from '../../lib/api';
 
 const PAGE_SIZE = 25;
 const MAX_TEAM_PLAYERS = 30;
@@ -415,11 +415,17 @@ function Row({ data }) {
   const [titleAssignments, setTitleAssignments] = useState({});
   const [minimumActivity, setMinimumActivity] = useState(1);
   const [combatOnly, setCombatOnly] = useState(false);
+  const [savedRosters, setSavedRosters] = useState([]);
   const [savedRoster, setSavedRoster] = useState(null);
   const [savingRoster, setSavingRoster] = useState(false);
   const [rosterSaveError, setRosterSaveError] = useState('');
   const [rosterNotice, setRosterNotice] = useState('');
   const [expandedSavedTeam, setExpandedSavedTeam] = useState(null);
+  const [deleteRosterModal, setDeleteRosterModal] = useState(false);
+  const [deletingRoster, setDeletingRoster] = useState(false);
+  const [rosterName, setRosterName] = useState('');
+  const [saveNameModal, setSaveNameModal] = useState(false);
+  const [editingRosterId, setEditingRosterId] = useState(null);
   const [candidatePage, setCandidatePage] = useState(1);
   const [memberQuery, setMemberQuery] = useState('');
   const [expandedScoreId, setExpandedScoreId] = useState(null);
@@ -430,6 +436,8 @@ function Row({ data }) {
   const [additionalCandidateOpen, setAdditionalCandidateOpen] = useState(false);
   const [additionalTeamIndex, setAdditionalTeamIndex] = useState(0);
   const [additionalRole, setAdditionalRole] = useState('player');
+  const [replacementModalPlayer, setReplacementModalPlayer] = useState(null);
+  const [replacementQuery, setReplacementQuery] = useState('');
   const [draftReady, setDraftReady] = useState(false);
 
   const candidates = useMemo(() => {
@@ -539,7 +547,10 @@ function Row({ data }) {
     return assignments;
   }, [candidates, rosterPlayers, teamCount, titleAssignments, titlePlayerIds]);
 
-  const assignments = useMemo(() => ({ ...automaticAssignments, ...distributionOverrides }), [automaticAssignments, distributionOverrides]);
+  const assignments = useMemo(
+    () => Object.fromEntries(Object.entries({ ...automaticAssignments, ...distributionOverrides }).filter(([, assignment]) => assignment)),
+    [automaticAssignments, distributionOverrides],
+  );
   const teams = useMemo(() => {
     const result = Array.from({ length: teamCount }, (_, index) => ({
       name: teamNames[index]?.trim() || `Team ${index + 1}`,
@@ -571,8 +582,32 @@ function Row({ data }) {
   const setDistributionAssignment = (playerId, teamIndex, role) => {
     setDistributionOverrides((current) => ({ ...current, [playerId]: { teamIndex, role } }));
   };
+  const replaceDistributedPlayer = (currentId, replacementId, teamIndex, role) => {
+    if (!replacementId) return;
+    setDistributionOverrides((current) => {
+      const next = { ...current };
+      next[currentId] = null;
+      next[replacementId] = { teamIndex, role };
+      return next;
+    });
+  };
+  const removeDistributedPlayer = (playerId) => {
+    setDistributionOverrides((current) => ({ ...current, [playerId]: null }));
+  };
+  const openReplacementModal = (player) => {
+    setReplacementModalPlayer(player);
+    setReplacementQuery('');
+  };
+  const closeReplacementModal = () => {
+    setReplacementModalPlayer(null);
+    setReplacementQuery('');
+  };
   const assignedIds = new Set(Object.keys(assignments));
   const availableForDistribution = candidatePool.filter((player) => !assignedIds.has(player.id));
+  const replacementCandidates = availableForDistribution.filter((player) =>
+    !replacementQuery.trim()
+    || `${player.name} ${player.id} ${player.alliance || ''}`.toLowerCase().includes(replacementQuery.trim().toLowerCase()),
+  );
   const filteredAdditionalCandidates = availableForDistribution.filter((player) =>
     !additionalCandidateQuery.trim()
     || `${player.name} ${player.id} ${player.alliance || ''}`.toLowerCase().includes(additionalCandidateQuery.trim().toLowerCase()),
@@ -667,16 +702,22 @@ function Row({ data }) {
   };
 
   useEffect(() => {
-    getSettings().then((result) => setSavedRoster(result.rowRoster || null)).catch(() => {});
+    getSettings().then((result) => {
+      const rosters = (Array.isArray(result.rowRosters) ? result.rowRosters : (result.rowRoster ? [result.rowRoster] : [])).filter((roster) => roster && Array.isArray(roster.teams));
+      setSavedRosters(rosters);
+      setSavedRoster((current) => current && rosters.some((roster) => roster.id === current.id) ? current : (rosters[0] || null));
+    }).catch(() => {});
   }, []);
 
-  async function saveRoster() {
+  async function saveRoster(name = rosterName) {
     setSavingRoster(true);
     setRosterSaveError('');
     try {
       const result = await updateSettings({
         rowRoster: {
           savedAt: new Date().toISOString(),
+          id: editingRosterId,
+          name,
           teamCount,
           teamNames,
           titles: titleAssignments,
@@ -690,9 +731,19 @@ function Row({ data }) {
           })),
         },
       });
-      setSavedRoster(result.rowRoster);
+      const saved = result.rowRoster;
+      setSavedRoster(saved);
+      setSavedRosters((current) => [saved, ...current.filter((item) => item && item.id !== saved.id)]);
       setRosterNotice('Roster saved successfully.');
       setRowTab('saved');
+      setSaveNameModal(false);
+      setEditingRosterId(null);
+      setSelected([]);
+      setTitleAssignments({});
+      setDistributionOverrides({});
+      setTeamNames({});
+      setGenerateStep(1);
+      window.localStorage.removeItem(ROW_DRAFT_STORAGE_KEY);
     } catch (error) {
       setRosterSaveError(error instanceof Error ? error.message : 'Unable to save the roster.');
       setRosterNotice('');
@@ -700,25 +751,45 @@ function Row({ data }) {
       setSavingRoster(false);
     }
 
-    function editSavedRoster() {
-      if (!savedRoster) return;
-      setTeamCount(savedRoster.teamCount || savedRoster.teams?.length || 1);
-      setTeamNames(savedRoster.teamNames || Object.fromEntries((savedRoster.teams || []).map((team, index) => [index, team.name])));
-      setTitleAssignments(savedRoster.titles || {});
-      const savedPlayers = (savedRoster.teams || []).flatMap((team) => [
-        ...(team.players || []).map((player) => player.id),
-        ...(team.reserves || []).map((player) => player.id),
-      ]);
-      setSelected([...new Set(savedPlayers)]);
-      const overrides = {};
-      (savedRoster.teams || []).forEach((team, teamIndex) => {
-        (team.players || []).forEach((player) => { overrides[player.id] = { teamIndex, role: 'player' }; });
-        (team.reserves || []).forEach((player) => { overrides[player.id] = { teamIndex, role: 'reserve' }; });
-      });
-      setDistributionOverrides(overrides);
-      setGenerateStep(3);
-      setRowTab('generate');
-      setRosterNotice('');
+  }
+
+  function requestSaveRoster() {
+    setRosterName(editingRosterId ? (savedRoster?.name || '') : '');
+    setSaveNameModal(true);
+  }
+
+  function editSavedRoster() {
+    if (!savedRoster) return;
+    setTeamCount(savedRoster.teamCount || savedRoster.teams?.length || 1);
+    setTeamNames(savedRoster.teamNames || Object.fromEntries((savedRoster.teams || []).map((team, index) => [index, team.name])));
+    setTitleAssignments(savedRoster.titles || {});
+    const savedPlayers = (savedRoster.teams || []).flatMap((team) => [...(team.players || []), ...(team.reserves || [])].map((player) => player.id));
+    setSelected([...new Set(savedPlayers)]);
+    const overrides = {};
+    (savedRoster.teams || []).forEach((team, teamIndex) => {
+      (team.players || []).forEach((player) => { overrides[player.id] = { teamIndex, role: 'player' }; });
+      (team.reserves || []).forEach((player) => { overrides[player.id] = { teamIndex, role: 'reserve' }; });
+    });
+    setDistributionOverrides(overrides);
+    setGenerateStep(3);
+    setRowTab('generate');
+    setEditingRosterId(savedRoster.id);
+    setRosterNotice('');
+  }
+
+  async function deleteSavedRoster() {
+    setDeletingRoster(true);
+    try {
+      await deleteSavedRowRoster(savedRoster.id);
+      const remaining = savedRosters.filter((item) => item && item.id !== savedRoster.id);
+      setSavedRosters(remaining);
+      setSavedRoster(remaining[0] || null);
+      setDeleteRosterModal(false);
+      setRosterNotice('Saved roster deleted.');
+    } catch (error) {
+      setRosterSaveError(error instanceof Error ? error.message : 'Unable to delete the roster.');
+    } finally {
+      setDeletingRoster(false);
     }
   }
 
@@ -732,13 +803,13 @@ function Row({ data }) {
     <div className="space-y-5">
       <SectionHeading eyebrow="RoW / Candidate finder" title="RoW roster management" description="Open a saved roster or generate a new roster through a guided setup, member selection, and automatic distribution flow." />
       <nav className="flex border-b border-gray-800" aria-label="RoW sections">
-        {[['saved', 'Saved roster'], ['generate', 'Generate roster']].map(([key, label]) => <button key={key} type="button" onClick={() => setRowTab(key)} className={`border-b-2 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${rowTab === key ? 'border-amber-400 text-amber-300' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>{label}</button>)}
+        {[['saved', 'Saved roster'], ['generate', 'Generate roster']].map(([key, label]) => <button key={key} type="button" onClick={() => { setRowTab(key); if (key === 'generate' && !editingRosterId) setSavedRoster(null); }} className={`border-b-2 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${rowTab === key ? 'border-amber-400 text-amber-300' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>{label}</button>)}
       </nav>
       {rowTab === 'saved' ? (
         <Card title="Saved roster">
           {rosterNotice ? <div className="mb-4 flex items-center justify-between gap-3 rounded border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2.5 text-sm text-emerald-300"><span>{rosterNotice}</span><button type="button" onClick={() => setRosterNotice('')} className="text-xs text-emerald-200/70 hover:text-emerald-200" aria-label="Dismiss notification">×</button></div> : null}
           {rosterSaveError ? <div className="mb-4 flex items-center justify-between gap-3 rounded border border-red-500/30 bg-red-500/[0.06] px-3 py-2.5 text-sm text-red-300"><span>{rosterSaveError}</span><button type="button" onClick={() => setRosterSaveError('')} className="text-xs text-red-200/70 hover:text-red-200" aria-label="Dismiss error">×</button></div> : null}
-          {savedRoster ? <div><div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-500/[0.03] px-4 py-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Current roster</p><p className="mt-1 text-sm text-gray-200">{savedRoster.teamCount || savedRoster.teams.length} teams · saved {savedRoster.savedAt ? new Date(savedRoster.savedAt).toLocaleString() : 'date unavailable'}</p></div><div className="flex gap-2"><button type="button" onClick={() => setExpandedSavedTeam(expandedSavedTeam ? null : savedRoster.teams[0]?.name)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-gray-200">View roster</button><button type="button" onClick={editSavedRoster} className="rounded border border-amber-400/60 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 hover:bg-amber-400/[0.06]">Edit roster</button></div></div><div className="grid gap-3 md:grid-cols-2">{savedRoster.teams.map((team) => <div key={team.name} className="overflow-hidden rounded-md border border-gray-800 bg-gray-500/[0.03]"><button type="button" onClick={() => setExpandedSavedTeam((current) => current === team.name ? null : team.name)} className="w-full p-4 text-left transition hover:bg-gray-500/[0.04]"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Team {savedRoster.teams.indexOf(team) + 1}</p><h3 className="mt-1 text-base font-semibold text-gray-200">{team.name}</h3></div><span className="rounded-full border border-amber-400/30 px-2 py-1 font-mono text-[10px] text-amber-300">{(team.players || []).length + (team.titles || []).length} / 30 players</span></div><div className="mt-3 grid grid-cols-3 gap-2"><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-gray-300">{number(team.power)}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Score</p><p className="mt-1 font-mono text-sm text-amber-200">{team.score ?? '—'}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p><p className="mt-1 font-mono text-sm text-gray-300">{(team.reserves || []).length} / 15</p></div></div></button>{expandedSavedTeam === team.name ? <div className="border-t border-gray-800 px-4 pb-4 pt-3"><div className="grid gap-4 sm:grid-cols-3"><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-amber-300">Title holders</p><div className="mt-2 space-y-1">{(team.titles || []).map((item) => <p key={item.title} className="text-xs text-gray-300"><span className="text-amber-200">{item.title}:</span> {item.name}</p>)}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Players</p><p className="mt-2 text-xs leading-relaxed text-gray-400">{(team.players || []).map((player) => player.name).join(' · ') || 'None assigned.'}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Reserves</p><p className="mt-2 text-xs leading-relaxed text-gray-400">{(team.reserves || []).map((player) => player.name).join(' · ') || 'None assigned.'}</p></div></div></div> : null}</div>)}</div></div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><p className="text-sm text-gray-300">No saved RoW roster</p><p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generate and save a roster to make the team assignments available across leadership devices.</p><button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button></div>}
+          {savedRoster && savedRosters.length ? <div><div className="mb-4 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Saved rosters</p><div className="mt-2 flex flex-wrap gap-2">{savedRosters.map((roster) => <button key={roster.id} type="button" onClick={() => { setSavedRoster(roster); setExpandedSavedTeam(null); }} className={`rounded border px-3 py-2 text-left transition ${savedRoster?.id === roster.id ? 'border-amber-400/60 bg-amber-400/[0.05] text-amber-300' : 'border-gray-800 text-gray-400 hover:border-gray-600'}`}><span className="block text-xs">{roster.name || 'Saved roster'}</span><span className="mt-1 block font-mono text-[9px] text-gray-600">{roster.teams?.length || 0} teams</span></button>)}</div></div><div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-500/[0.03] px-4 py-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Current roster</p><p className="mt-1 text-sm text-gray-200">{savedRoster.name || 'Saved roster'} · {savedRoster.teamCount || savedRoster.teams.length} teams · saved {savedRoster.savedAt ? new Date(savedRoster.savedAt).toLocaleString() : 'date unavailable'}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setExpandedSavedTeam(expandedSavedTeam ? null : savedRoster.teams[0]?.name)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-gray-200">View roster</button><button type="button" onClick={editSavedRoster} className="rounded border border-amber-400/60 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 hover:bg-amber-400/[0.06]">Edit roster</button><button type="button" onClick={() => setDeleteRosterModal(true)} className="rounded border border-red-500/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-300 hover:bg-red-500/[0.06]">Delete roster</button></div></div><div className="grid gap-3 md:grid-cols-2">{savedRoster.teams.map((team) => <div key={team.name} className="overflow-hidden rounded-md border border-gray-800 bg-gray-500/[0.03]"><button type="button" onClick={() => setExpandedSavedTeam((current) => current === team.name ? null : team.name)} className="w-full p-4 text-left transition hover:bg-gray-500/[0.04]"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Team {savedRoster.teams.indexOf(team) + 1}</p><h3 className="mt-1 text-base font-semibold text-gray-200">{team.name}</h3></div><span className="rounded-full border border-amber-400/30 px-2 py-1 font-mono text-[10px] text-amber-300">{(team.players || []).length + (team.titles || []).length} / 30 players</span></div><div className="mt-3 grid grid-cols-3 gap-2"><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-gray-300">{number(team.power)}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Score</p><p className="mt-1 font-mono text-sm text-amber-200">{team.score ?? '—'}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p><p className="mt-1 font-mono text-sm text-gray-300">{(team.reserves || []).length} / 15</p></div></div></button>{expandedSavedTeam === team.name ? <div className="border-t border-gray-800 px-4 pb-4 pt-3"><div className="grid gap-4 sm:grid-cols-3"><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-amber-300">Title holders</p><div className="mt-2 space-y-1">{(team.titles || []).map((item) => <p key={item.title} className="border-b border-gray-800 py-1 text-xs text-gray-300"><span className="text-amber-200">{item.title}:</span> {item.name}</p>)}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Players</p><div className="mt-2">{(team.players || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Reserves</p><div className="mt-2">{(team.reserves || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div></div></div> : null}</div>)}</div></div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><p className="text-sm text-gray-300">No saved RoW rosters</p><p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generate and save a roster to make it available here.</p><button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button></div>}
         </Card>
       ) : (
       <>
@@ -804,10 +875,13 @@ function Row({ data }) {
               <button type="button" disabled={!canAddAdditionalCandidates} onClick={() => { setDistributionOverrides((current) => ({ ...current, ...Object.fromEntries(additionalCandidateIds.map((id) => [id, { teamIndex: additionalTeamIndex, role: additionalRole }])) })); setAdditionalCandidateIds([]); setAdditionalCandidateQuery(''); setAdditionalCandidateOpen(false); }} className="rounded border border-amber-400/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 disabled:cursor-not-allowed disabled:opacity-30">Add selected</button>
             </div>
           </div>
-          <div className="mt-3 grid gap-3 lg:grid-cols-2">{teams.map((team, teamIndex) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</p><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p></div><div className="text-right font-mono text-[9px] uppercase tracking-[0.1em]"><p className="text-amber-300">{team.players.length + team.titles.length}/{MAX_TEAM_PLAYERS} players</p><p className="text-gray-500">{team.reserves.length}/{MAX_TEAM_RESERVES} reserves</p></div></div>{team.titles.length ? <div className="mt-3 border-b border-gray-800 pb-2"><p className="mb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Title holders</p>{team.titles.map(({ title, player }) => <p key={title} className="text-xs text-amber-200">{title}: <span className="text-gray-300">{player.name}</span></p>)}</div> : null}<div className="mt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Players</p>{team.players.length ? team.players.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'player' }; return <div key={player.id} className="mt-1 flex items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-300">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'reserve')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'reserve')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Reserve</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No players assigned.</p>}</div><div className="mt-3 border-t border-gray-800 pt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p>{team.reserves.length ? team.reserves.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'reserve' }; return <div key={player.id} className="mt-1 flex items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-400">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'player')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'player')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Player</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No reserves assigned.</p>}</div></div>)}</div>
-          <div className="mt-4 flex items-center justify-end gap-3"><button type="button" onClick={saveRoster} disabled={savingRoster || !teams.length} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06] disabled:cursor-not-allowed disabled:opacity-40">{savingRoster ? 'Saving roster…' : 'Save roster'}</button></div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">{teams.map((team, teamIndex) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</p><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p></div><div className="text-right font-mono text-[9px] uppercase tracking-[0.1em]"><p className="text-amber-300">{team.players.length + team.titles.length}/{MAX_TEAM_PLAYERS} players</p><p className="text-gray-500">{team.reserves.length}/{MAX_TEAM_RESERVES} reserves</p></div></div>{team.titles.length ? <div className="mt-3 border-b border-gray-800 pb-2"><p className="mb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Title holders</p>{team.titles.map(({ title, player }) => <p key={title} className="text-xs text-amber-200">{title}: <span className="text-gray-300">{player.name}</span></p>)}</div> : null}<div className="mt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Players</p>{team.players.length ? team.players.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'player' };           return <div key={player.id} className="mt-1 flex flex-wrap items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-300">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'reserve')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'reserve')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Reserve</button>          <button type="button" onClick={() => openReplacementModal(player)} className="rounded border border-amber-400/60 px-1.5 py-1 font-mono text-[9px] text-amber-300 hover:bg-amber-400/[0.06]">Replace</button><button type="button" onClick={() => removeDistributedPlayer(player.id)} className="rounded border border-red-500/40 px-1.5 py-1 font-mono text-[9px] text-red-300 hover:bg-red-500/[0.06]">Remove</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No players assigned.</p>}</div>          <div className="mt-3 border-t border-gray-800 pt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p>{team.reserves.length ? team.reserves.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'reserve' }; return <div key={player.id} className="mt-1 flex flex-wrap items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-400">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'player')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'player')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Player</button>          <button type="button" onClick={() => openReplacementModal(player)} className="rounded border border-amber-400/60 px-1.5 py-1 font-mono text-[9px] text-amber-300 hover:bg-amber-400/[0.06]">Replace</button><button type="button" onClick={() => removeDistributedPlayer(player.id)} className="rounded border border-red-500/40 px-1.5 py-1 font-mono text-[9px] text-red-300 hover:bg-red-500/[0.06]">Remove</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No reserves assigned.</p>}</div></div>)}</div>
+          <div className="mt-4 flex items-center justify-end gap-3"><button type="button" onClick={requestSaveRoster} disabled={savingRoster || !teams.length} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06] disabled:cursor-not-allowed disabled:opacity-40">{savingRoster ? 'Saving roster…' : 'Save roster'}</button></div>
       </Card>
       : null}
+      {replacementModalPlayer ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="replace-player-title"><div className="w-full max-w-lg rounded-md border border-gray-700 bg-discord-bg-darker p-5 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-300">Replace assigned member</p><h2 id="replace-player-title" className="mt-2 text-lg font-semibold text-gray-100">{replacementModalPlayer.name}</h2><p className="mt-1 text-xs text-gray-500">Choose an unassigned candidate to keep this team and role assignment.</p></div><button type="button" onClick={closeReplacementModal} className="text-xl leading-none text-gray-500 hover:text-gray-200" aria-label="Close replacement dialog">×</button></div><input autoFocus value={replacementQuery} onChange={(event) => setReplacementQuery(event.target.value)} placeholder="Search name, ID, or alliance" className="mt-4 w-full rounded border border-gray-800 bg-black/10 px-3 py-2 text-sm text-gray-200 outline-none placeholder:text-gray-700 focus:border-gray-600" /><div className="mt-3 max-h-64 overflow-y-auto rounded border border-gray-800">{replacementCandidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { const assignment = assignments[replacementModalPlayer.id]; replaceDistributedPlayer(replacementModalPlayer.id, candidate.id, assignment.teamIndex, assignment.role); closeReplacementModal(); }} className="flex w-full items-center justify-between gap-3 border-b border-gray-800 px-3 py-2 text-left last:border-b-0 hover:bg-gray-500/[0.06]"><span className="min-w-0 truncate text-sm text-gray-300">{candidate.name}</span><span className="shrink-0 font-mono text-[10px] text-gray-600">score {candidate.score ?? '—'}</span></button>)}{!replacementCandidates.length ? <p className="px-3 py-4 text-sm text-gray-600">No unassigned candidates match.</p> : null}</div><div className="mt-4 flex justify-end"><button type="button" onClick={closeReplacementModal} className="rounded border border-gray-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:text-gray-200">Cancel</button></div></div></div> : null}
+      {saveNameModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="save-roster-title"><div className="w-full max-w-md rounded-md border border-gray-700 bg-discord-bg-darker p-5 shadow-2xl"><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-300">Save RoW roster</p><h2 id="save-roster-title" className="mt-2 text-lg font-semibold text-gray-100">Name this roster</h2><p className="mt-2 text-sm leading-relaxed text-gray-500">Use a name that helps leadership distinguish this roster from other saved plans.</p><input autoFocus value={rosterName} onChange={(event) => setRosterName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && rosterName.trim()) saveRoster(rosterName.trim()); }} placeholder="Example: October war roster" className="mt-4 w-full rounded border border-gray-800 bg-black/10 px-3 py-2 text-sm text-gray-200 outline-none placeholder:text-gray-700 focus:border-gray-600" /><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setSaveNameModal(false)} className="rounded border border-gray-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400">Cancel</button><button type="button" disabled={!rosterName.trim() || savingRoster} onClick={() => saveRoster(rosterName.trim())} className="rounded border border-amber-400/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 disabled:opacity-40">{savingRoster ? 'Saving…' : 'Save roster'}</button></div></div></div> : null}
+      {deleteRosterModal ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="delete-roster-title"><div className="w-full max-w-md rounded-md border border-gray-700 bg-discord-bg-darker p-5 shadow-2xl"><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-red-300">Delete saved roster</p><h2 id="delete-roster-title" className="mt-2 text-lg font-semibold text-gray-100">Delete this roster?</h2><p className="mt-2 text-sm leading-relaxed text-gray-500">This removes the shared saved roster for all leadership users. Your browser draft will remain available if you want to recreate it.</p><div className="mt-5 flex justify-end gap-2"><button type="button" disabled={deletingRoster} onClick={() => setDeleteRosterModal(false)} className="rounded border border-gray-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400">Cancel</button><button type="button" disabled={deletingRoster} onClick={deleteSavedRoster} className="rounded border border-red-500/50 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-red-300 disabled:opacity-50">{deletingRoster ? 'Deleting…' : 'Delete roster'}</button></div></div></div> : null}
       </>
       )}
     </div>
