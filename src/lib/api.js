@@ -57,6 +57,13 @@ export function updateSettings(patch) {
   });
 }
 
+export function startSnapshotFetch(date) {
+  return request('/api/settings', {
+    method: 'POST',
+    body: JSON.stringify({ date }),
+  });
+}
+
 export function createEvent(payload) {
   return request('/api/events', {
     method: 'POST',

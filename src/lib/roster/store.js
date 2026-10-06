@@ -76,8 +76,6 @@ async function historicalAvatarMap(serverIdValue, lordIds) {
   return result;
 }
 
-  const LEADERSHIP_METRICS = ['Units Killed', 'Merits', 'Units Healed', 'Units Dead'];
-
 function compactNumber(value) {
   if (value === null || value === undefined) return '—';
   if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
@@ -122,7 +120,6 @@ export async function getLeadershipDashboard() {
     where: {
       snapshotId: { in: snapshots.map((item) => item.id) },
       subjectType: 'LORD',
-      label: { in: LEADERSHIP_METRICS },
       subjectId: { in: lordIds },
     },
     select: { snapshotId: true, subjectId: true, label: true, section: true, valueNumber: true },
@@ -149,8 +146,28 @@ export async function getLeadershipDashboard() {
       : Number(preferred.valueNumber);
   }
 
+  function metricMatching(rows, patterns) {
+    const match = rows.find((item) => patterns.some((pattern) => pattern.test(item.label)));
+    return match?.valueNumber === null || match?.valueNumber === undefined
+      ? null
+      : Number(match.valueNumber);
+  }
+
   const players = currentRows.map((row) => {
     const history = metricsByLord.get(row.lordId) || new Map();
+    const latestDetail = history.get(latest.id) || snapshots
+      .slice()
+      .reverse()
+      .map((snapshot) => history.get(snapshot.id) || [])
+      .find((values) => values.length) || [];
+    const rowMetrics = latestDetail.filter((item) => /root(?:s)? of war|row/i.test(item.section || ''));
+    const competitiveMetrics = latestDetail.filter((item) => /tournament of champion|toc/i.test(item.section || ''));
+    const rowScore = metricMatching(rowMetrics, [/^(?:row|roots? of war)?\s*(?:score|highest score)$/i, /highest.*score/i]);
+    const rowWins = metricMatching(rowMetrics, [/wins?/i, /victories/i]);
+    const rowMatches = metricMatching(rowMetrics, [/matches?/i, /games?/i, /battles?/i]);
+    const competitiveWins = metricMatching(competitiveMetrics, [/wins?/i, /victories/i]);
+    const competitiveBattles = metricMatching(competitiveMetrics, [/battles?/i, /matches?/i, /games?/i]);
+    const competitiveWinRate = metricMatching(competitiveMetrics, [/win\s*rate/i, /victory\s*rate/i]);
     const observations = snapshots
       .map((snapshot, index) => {
         const values = history.get(snapshot.id) || [];
@@ -222,6 +239,16 @@ export async function getLeadershipDashboard() {
       healing: current.healing,
       deaths: current.deaths,
       alliance: row.alliance?.name || 'Unaffiliated',
+      row: rowMetrics.length ? {
+        score: rowScore,
+        wins: rowWins,
+        matches: rowMatches,
+      } : undefined,
+      toc: competitiveMetrics.length ? {
+        wins: competitiveWins,
+        battles: competitiveBattles,
+        winRate: competitiveWinRate,
+      } : undefined,
     };
   });
 
@@ -240,6 +267,31 @@ export async function getLeadershipDashboard() {
     healing: sumChange('healing'),
     merits: sumChange('merits'),
   };
+  const activityTimeline = snapshots.map((snapshot, index) => {
+    if (index === 0) {
+      return { date: snapshot.snapshotDate.toISOString().slice(0, 10), activePlayers: 0 };
+    }
+    const previousSnapshot = snapshots[index - 1];
+    let activePlayers = 0;
+    currentRows.forEach((row) => {
+      const history = metricsByLord.get(row.lordId) || new Map();
+      const currentValues = history.get(snapshot.id) || [];
+      const previousValues = history.get(previousSnapshot.id) || [];
+      const currentPower = (rowsByLord.get(row.lordId) || []).find((item) => item.snapshotId === snapshot.id)?.power;
+      const previousPower = (rowsByLord.get(row.lordId) || []).find((item) => item.snapshotId === previousSnapshot.id)?.power;
+      const progressed = ['Units Killed', 'Merits', 'Units Healed'].some((label) => {
+        const current = metricAt(currentValues, label);
+        const previous = metricAt(previousValues, label);
+        return current !== null && previous !== null && current > previous;
+      });
+      if (progressed || (currentPower !== null && currentPower !== undefined &&
+        previousPower !== null && previousPower !== undefined &&
+        Number(currentPower) > Number(previousPower))) {
+        activePlayers += 1;
+      }
+    });
+    return { date: snapshot.snapshotDate.toISOString().slice(0, 10), activePlayers };
+  });
 
   return {
     server: number,
@@ -261,6 +313,7 @@ export async function getLeadershipDashboard() {
       dormant: players.filter((player) => player.activity === 'Dormant').length,
     },
     recentChanges,
+    activityTimeline,
     biggestKillGrowth: [...players].filter((player) => player.changes.kills !== null).sort((a, b) => b.changes.kills - a.changes.kills).slice(0, 5),
     attention: [
       highPowerLowActivity

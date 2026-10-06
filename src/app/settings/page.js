@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Save, Table2 } from 'lucide-react';
-import { getSettings, updateSettings } from '../../lib/api';
+import { CalendarDays, RefreshCw, Save, Table2 } from 'lucide-react';
+import { getSettings, startSnapshotFetch, updateSettings } from '../../lib/api';
 import { toastSuccess, toastError } from '../../lib/swal';
 
 function formatSeconds(ms) {
@@ -21,6 +21,9 @@ export default function SettingsPage() {
   const [autoRefresh, setAutoRefresh] = useState(null);
   const [intervalSec, setIntervalSec] = useState(30);
   const [dirty, setDirty] = useState(false);
+  const [fetchState, setFetchState] = useState(null);
+  const [fetchDate, setFetchDate] = useState(new Date().toISOString().slice(0, 10));
+  const [fetchStarting, setFetchStarting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,6 +34,7 @@ export default function SettingsPage() {
         setAutoRefresh(res.autoRefresh);
         setIntervalSec(Math.round(res.autoRefresh.intervalMs / 1000));
       }
+      setFetchState(res.fetch || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -41,6 +45,32 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!fetchState?.running) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await getSettings();
+        setFetchState(res.fetch || null);
+      } catch {
+        // The active fetch remains visible until the next successful poll.
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [fetchState?.running]);
+
+  async function fetchSnapshot() {
+    setFetchStarting(true);
+    try {
+      const res = await startSnapshotFetch(fetchDate);
+      setFetchState(res.state);
+      toastSuccess(`Snapshot fetch started for ${fetchDate}.`);
+    } catch (err) {
+      toastError(err.message);
+    } finally {
+      setFetchStarting(false);
+    }
+  }
 
   async function toggle() {
     if (!autoRefresh) return;
@@ -123,6 +153,34 @@ export default function SettingsPage() {
 
       {!loading && !error && autoRefresh && (
         <div className="space-y-3">
+          <div className="rounded-lg border border-gray-800 bg-discord-surface">
+            <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+              <div className="flex items-start gap-3">
+                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                <div>
+                  <div className="text-sm font-medium text-neutral-100">Fetch a specific snapshot</div>
+                  <p className="mt-0.5 max-w-xl text-[13px] text-gray-500">Fetch the roster and detail pages for one source date. This runs independently from the scheduled latest/history jobs.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="date" value={fetchDate} onChange={(event) => setFetchDate(event.target.value)} disabled={fetchState?.running} className="rounded-md border border-gray-800 bg-discord-bg-darker px-2 py-1.5 font-mono text-sm text-neutral-100 outline-none focus:border-gray-500 disabled:opacity-50" />
+                <button type="button" onClick={fetchSnapshot} disabled={fetchStarting || fetchState?.running || !fetchDate} className="rounded-md bg-gray-100 px-3 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40">{fetchState?.running ? 'Fetching…' : 'Fetch snapshot'}</button>
+              </div>
+            </div>
+            {fetchState ? (
+              <div className="border-t border-gray-800 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Fetch status · {fetchState.date || '—'}</p>
+                  <p className={`font-mono text-[10px] uppercase tracking-[0.16em] ${fetchState.phase === 'failed' ? 'text-red-400' : fetchState.phase === 'complete' ? 'text-emerald-400' : 'text-amber-300'}`}>{fetchState.phase}</p>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-800"><div className={`h-full rounded-full ${fetchState.phase === 'failed' ? 'bg-red-400' : fetchState.phase === 'complete' ? 'w-full bg-emerald-400' : 'w-1/2 animate-pulse bg-amber-400'}`} /></div>
+                {fetchState.progress?.stats ? <p className="mt-2 text-xs text-gray-500">Detail progress: {fetchState.progress.stats.pages || 0} pages · {fetchState.progress.stats.lords || 0} players · {fetchState.progress.stats.alliances || 0} alliances.</p> : null}
+                {fetchState.result?.details?.stats ? <p className="mt-2 text-xs text-gray-500">Snapshot saved, then {fetchState.result.details.stats.pages || 0} detail pages processed ({fetchState.result.details.stats.lords || 0} players and {fetchState.result.details.stats.alliances || 0} alliances).</p> : null}
+                {fetchState.phase === 'failed' && fetchState.result?.snapshot ? <p className="mt-2 text-xs text-amber-300">The roster rows were saved, but the player detail phase did not complete. Retry this date after checking the bot detail settings and source access.</p> : null}
+                {fetchState.error ? <p className="mt-2 text-xs text-red-400">{fetchState.error}</p> : null}
+              </div>
+            ) : null}
+          </div>
           <div className="rounded-lg border border-gray-800 bg-discord-surface">
             <div className="flex flex-wrap items-center justify-between gap-4 p-4">
               <div className="flex items-start gap-3">

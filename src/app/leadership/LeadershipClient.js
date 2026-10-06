@@ -1,12 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Info, Search } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { getSettings, updateSettings } from '../../lib/api';
 
 const PAGE_SIZE = 25;
+const MAX_TEAM_PLAYERS = 30;
+const MAX_TEAM_RESERVES = 15;
+const ROW_DRAFT_STORAGE_KEY = 'phoenix-herald:row-roster-draft';
 
 const TABS = [
   ['overview', 'Overview'],
@@ -266,6 +270,23 @@ function Overview({ data }) {
           </div>
         </Card>
       </div>
+      <Card title="Server activity trend">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures.</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">{data.activityTimeline?.length || 0} snapshots</p>
+        </div>
+        {data.activityTimeline?.length > 1 ? <div className="mt-3 h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data.activityTimeline} margin={{ top: 12, right: 12, left: 0, bottom: 4 }}>
+              <CartesianGrid stroke="#2b2d31" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#71717a', fontSize: 10 }} tickFormatter={(value) => value.slice(5)} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} width={32} tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(value) => [`${value} players`, 'Active players']} labelFormatter={(value) => `Snapshot ${value}`} contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }} labelStyle={{ color: '#d1d5db' }} itemStyle={{ color: '#fbbf24' }} />
+              <Line type="monotone" dataKey="activePlayers" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#fbbf24' }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">At least two snapshots are required to show the activity trend.</p>}
+      </Card>
       <Card title="Activity intelligence">
         <div className="mt-3 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
           <div>
@@ -334,14 +355,80 @@ function percentile(value, values) {
   return Math.round(((below + (equal - 1) / 2) / (values.length - 1)) * 100);
 }
 
+function PlayerCombobox({ title, candidates, selectedId, unavailableIds, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef(null);
+  const selectedPlayer = candidates.find((player) => player.id === selectedId);
+  const filtered = candidates
+    .filter((player) => !unavailableIds.has(player.id))
+    .filter((player) => !query.trim() || `${player.name} ${player.id}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .slice(0, 30);
+
+  useEffect(() => {
+    const close = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative min-w-0">
+      <input
+        type="text"
+        value={open ? query : (selectedPlayer?.name || '')}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        placeholder={`Search ${title.toLowerCase()}`}
+        aria-label={`Search player for ${title}`}
+        className="block w-full min-w-0 rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none placeholder:text-gray-700 focus:border-gray-600"
+      />
+      {open ? (
+        <div className="absolute right-0 z-40 mt-1 max-h-48 w-52 overflow-y-auto rounded-md border border-gray-700 bg-discord-bg-darker p-1 shadow-xl">
+          <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(false); }} className="w-full rounded px-2 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-500/10 hover:text-gray-300">Unassigned</button>
+          {filtered.map((player) => (
+            <button key={player.id} type="button" onClick={() => { onChange(player.id); setQuery(''); setOpen(false); }} className="w-full truncate rounded px-2 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-500/10 hover:text-amber-300">
+              <span className="block truncate">{player.name}</span>
+              <span className="block font-mono text-[9px] text-gray-600">#{player.id}</span>
+            </button>
+          ))}
+          {!filtered.length ? <p className="px-2 py-2 text-xs text-gray-600">No matching players.</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Row({ data }) {
   const [rowTab, setRowTab] = useState('saved');
   const [generateStep, setGenerateStep] = useState(1);
   const [teamCount, setTeamCount] = useState(2);
+  const [teamNames, setTeamNames] = useState({});
   const [selected, setSelected] = useState([]);
   const [titleAssignments, setTitleAssignments] = useState({});
   const [minimumActivity, setMinimumActivity] = useState(1);
   const [combatOnly, setCombatOnly] = useState(false);
+  const [savedRoster, setSavedRoster] = useState(null);
+  const [savingRoster, setSavingRoster] = useState(false);
+  const [rosterSaveError, setRosterSaveError] = useState('');
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [memberQuery, setMemberQuery] = useState('');
+  const [expandedScoreId, setExpandedScoreId] = useState(null);
+  const [filterInfo, setFilterInfo] = useState(null);
+  const [distributionOverrides, setDistributionOverrides] = useState({});
+  const [additionalCandidateIds, setAdditionalCandidateIds] = useState([]);
+  const [additionalCandidateQuery, setAdditionalCandidateQuery] = useState('');
+  const [additionalCandidateOpen, setAdditionalCandidateOpen] = useState(false);
+  const [additionalTeamIndex, setAdditionalTeamIndex] = useState(0);
+  const [additionalRole, setAdditionalRole] = useState('player');
+  const [draftReady, setDraftReady] = useState(false);
 
   const candidates = useMemo(() => {
     const base = data.players.map((player) => {
@@ -394,13 +481,17 @@ function Row({ data }) {
   }, [combatOnly, data.players, minimumActivity]);
 
   const toggleSelected = (id) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const selectedPlayers = candidates.filter((player) => selected.includes(player.id));
   const titles = ['Leader', 'Warmaster', 'Scholar', 'Envoy', 'Beastmaster', 'Saintess'];
+  const titlePlayerIds = new Set(Object.values(titleAssignments).filter(Boolean));
+  const candidatePool = candidates.filter((player) => !titlePlayerIds.has(player.id));
+  const filteredCandidatePool = candidatePool.filter((player) => !memberQuery.trim() || `${player.name} ${player.id} ${player.alliance || ''}`.toLowerCase().includes(memberQuery.trim().toLowerCase()));
+  const selectedPlayers = candidatePool.filter((player) => selected.includes(player.id));
+  const candidatePageCount = Math.max(1, Math.ceil(filteredCandidatePool.length / PAGE_SIZE));
+  const pageCandidates = filteredCandidatePool.slice((candidatePage - 1) * PAGE_SIZE, candidatePage * PAGE_SIZE);
   const titleSlots = Array.from({ length: teamCount }, (_, teamIndex) => ({
     teamIndex,
     titles,
   }));
-  const titlePlayerIds = new Set(Object.values(titleAssignments).filter(Boolean));
   const rosterPlayers = candidates.filter((player) => selected.includes(player.id) || titlePlayerIds.has(player.id));
   const setTitlePlayer = (teamIndex, title, id) => {
     const key = `${teamIndex}:${title}`;
@@ -410,33 +501,200 @@ function Row({ data }) {
       else delete next[key];
       return next;
     });
+    if (id) setSelected((current) => current.filter((playerId) => playerId !== id));
   };
+  const setTeamName = (teamIndex, value) => {
+    setTeamNames((current) => ({ ...current, [teamIndex]: value }));
+  };
+  const automaticAssignments = useMemo(() => {
+    const assignments = {};
+    const totals = Array.from({ length: teamCount }, () => ({ players: 0, reserves: 0, power: 0 }));
+    titles.forEach((title) => {
+      for (let teamIndex = 0; teamIndex < teamCount; teamIndex += 1) {
+        const id = titleAssignments[`${teamIndex}:${title}`];
+        if (id) {
+          assignments[id] = { teamIndex, role: 'player' };
+          totals[teamIndex].players += 1;
+          const player = candidates.find((item) => item.id === id);
+          totals[teamIndex].power += player?.powerValue || 0;
+        }
+      }
+    });
+    [...rosterPlayers]
+      .filter((player) => !titlePlayerIds.has(player.id))
+      .sort((a, b) => b.powerValue - a.powerValue)
+      .forEach((player) => {
+        const availablePlayers = totals.filter((team) => team.players < MAX_TEAM_PLAYERS);
+        const pool = availablePlayers.length ? availablePlayers : totals.filter((team) => team.reserves < MAX_TEAM_RESERVES);
+        if (!pool.length) return;
+        const team = pool.reduce((lowest, current) => current.power < lowest.power ? current : lowest, pool[0]);
+        const teamIndex = totals.indexOf(team);
+        const role = availablePlayers.length ? 'player' : 'reserve';
+        assignments[player.id] = { teamIndex, role };
+        team[role === 'player' ? 'players' : 'reserves'] += 1;
+        team.power += player.powerValue;
+      });
+    return assignments;
+  }, [candidates, rosterPlayers, teamCount, titleAssignments, titlePlayerIds]);
+
+  const assignments = useMemo(() => ({ ...automaticAssignments, ...distributionOverrides }), [automaticAssignments, distributionOverrides]);
   const teams = useMemo(() => {
     const result = Array.from({ length: teamCount }, (_, index) => ({
-      name: `Team ${index + 1}`,
+      name: teamNames[index]?.trim() || `Team ${index + 1}`,
       titles: [],
       players: [],
+      reserves: [],
       power: 0,
       score: 0,
     }));
-    result.forEach((team, teamIndex) => {
-      titles.forEach((title) => {
-        const player = candidates.find((item) => item.id === titleAssignments[`${teamIndex}:${title}`]);
-        if (player) {
-          team.titles.push({ title, player });
-          team.power += player.powerValue;
-          team.score += player.score || 0;
-        }
-      });
-    });
-    [...rosterPlayers].filter((player) => !titlePlayerIds.has(player.id)).sort((a, b) => b.powerValue - a.powerValue).forEach((player) => {
-      const team = result.reduce((lowest, current) => current.power < lowest.power ? current : lowest, result[0]);
-      team.players.push(player);
+    Object.entries(assignments).forEach(([id, assignment]) => {
+      const player = candidates.find((item) => item.id === id);
+      const team = result[assignment.teamIndex];
+      if (!player || !team || titlePlayerIds.has(id)) return;
+      if (assignment.role === 'reserve') team.reserves.push(player);
+      else team.players.push(player);
       team.power += player.powerValue;
       team.score += player.score || 0;
     });
+    titles.forEach((title) => {
+      for (let teamIndex = 0; teamIndex < teamCount; teamIndex += 1) {
+        const id = titleAssignments[`${teamIndex}:${title}`];
+        const player = id ? candidates.find((item) => item.id === id) : null;
+        if (player && result[teamIndex]) result[teamIndex].titles.push({ title, player });
+      }
+    });
     return result;
-  }, [candidates, rosterPlayers, teamCount, titleAssignments, titlePlayerIds]);
+  }, [assignments, candidates, teamCount, teamNames, titleAssignments]);
+
+  const setDistributionAssignment = (playerId, teamIndex, role) => {
+    setDistributionOverrides((current) => ({ ...current, [playerId]: { teamIndex, role } }));
+  };
+  const assignedIds = new Set(Object.keys(assignments));
+  const availableForDistribution = candidatePool.filter((player) => !assignedIds.has(player.id));
+  const filteredAdditionalCandidates = availableForDistribution.filter((player) =>
+    !additionalCandidateQuery.trim()
+    || `${player.name} ${player.id} ${player.alliance || ''}`.toLowerCase().includes(additionalCandidateQuery.trim().toLowerCase()),
+  );
+  const teamHasCapacity = (team, role) => role === 'player'
+    ? team.players.length + team.titles.length < MAX_TEAM_PLAYERS
+    : team.reserves.length < MAX_TEAM_RESERVES;
+  const canAssign = (playerId, teamIndex, role) => {
+    const current = assignments[playerId];
+    if (current?.teamIndex === teamIndex && current.role === role) return true;
+    const team = teams[teamIndex];
+    if (!team) return false;
+    const currentTeam = current ? teams[current.teamIndex] : null;
+    const playerAvailable = teamHasCapacity(team, role)
+      || (current?.teamIndex === teamIndex && current.role !== role);
+    if (!playerAvailable) return false;
+    if (currentTeam && current.teamIndex !== teamIndex && !teamHasCapacity(team, role)) return false;
+    return true;
+  };
+  const canAddAdditionalCandidates = additionalCandidateIds.length > 0
+    && additionalCandidateIds.every((id) => canAssign(id, additionalTeamIndex, additionalRole))
+    && (additionalRole === 'player'
+      ? teams[additionalTeamIndex]?.players.length + teams[additionalTeamIndex]?.titles.length + additionalCandidateIds.length <= MAX_TEAM_PLAYERS
+      : teams[additionalTeamIndex]?.reserves.length + additionalCandidateIds.length <= MAX_TEAM_RESERVES);
+
+  useEffect(() => {
+    setCandidatePage(1);
+  }, [minimumActivity, combatOnly, titleAssignments, memberQuery]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(ROW_DRAFT_STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (Number.isInteger(draft.generateStep) && draft.generateStep >= 1 && draft.generateStep <= 3) setGenerateStep(draft.generateStep);
+        if (draft.rowTab === 'generate' || draft.rowTab === 'saved') setRowTab(draft.rowTab);
+        if (Number.isInteger(draft.teamCount) && draft.teamCount >= 1 && draft.teamCount <= 20) setTeamCount(draft.teamCount);
+        if (draft.teamNames && typeof draft.teamNames === 'object') setTeamNames(draft.teamNames);
+        if (Array.isArray(draft.selected)) setSelected(draft.selected);
+        if (draft.titleAssignments && typeof draft.titleAssignments === 'object') setTitleAssignments(draft.titleAssignments);
+        if (Number.isInteger(draft.minimumActivity)) setMinimumActivity(draft.minimumActivity);
+        if (typeof draft.combatOnly === 'boolean') setCombatOnly(draft.combatOnly);
+        if (typeof draft.memberQuery === 'string') setMemberQuery(draft.memberQuery);
+        if (Number.isInteger(draft.candidatePage) && draft.candidatePage >= 1) setCandidatePage(draft.candidatePage);
+        if (draft.distributionOverrides && typeof draft.distributionOverrides === 'object') setDistributionOverrides(draft.distributionOverrides);
+      }
+    } catch (error) {
+      console.warn('[ROW] Unable to restore roster draft:', error);
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      window.localStorage.setItem(ROW_DRAFT_STORAGE_KEY, JSON.stringify({
+        rowTab,
+        generateStep,
+        teamCount,
+        teamNames,
+        selected,
+        titleAssignments,
+        minimumActivity,
+        combatOnly,
+        memberQuery,
+        candidatePage,
+        distributionOverrides,
+      }));
+    } catch (error) {
+      console.warn('[ROW] Unable to persist roster draft:', error);
+    }
+  }, [
+    draftReady,
+    rowTab,
+    generateStep,
+    teamCount,
+    teamNames,
+    selected,
+    titleAssignments,
+    minimumActivity,
+    combatOnly,
+    memberQuery,
+    candidatePage,
+    distributionOverrides,
+  ]);
+
+  const selectAllVisible = () => setSelected((current) => [...new Set([...current, ...filteredCandidatePool.map((player) => player.id)])]);
+  const unselectAllVisible = () => {
+    const visibleIds = new Set(filteredCandidatePool.map((player) => player.id));
+    setSelected((current) => current.filter((id) => !visibleIds.has(id)));
+  };
+
+  useEffect(() => {
+    getSettings().then((result) => setSavedRoster(result.rowRoster || null)).catch(() => {});
+  }, []);
+
+  async function saveRoster() {
+    setSavingRoster(true);
+    setRosterSaveError('');
+    try {
+      const result = await updateSettings({
+        rowRoster: {
+          savedAt: new Date().toISOString(),
+          teamCount,
+          teamNames,
+          titles: titleAssignments,
+          teams: teams.map((team) => ({
+            name: team.name,
+            titles: team.titles.map(({ title, player }) => ({ title, id: player.id, name: player.name })),
+            players: team.players.map((player) => ({ id: player.id, name: player.name })),
+            reserves: team.reserves.map((player) => ({ id: player.id, name: player.name })),
+            power: team.power,
+            score: team.score,
+          })),
+        },
+      });
+      setSavedRoster(result.rowRoster);
+    } catch (error) {
+      setRosterSaveError(error instanceof Error ? error.message : 'Unable to save the roster.');
+    } finally {
+      setSavingRoster(false);
+    }
+  }
 
   const steps = [
     ['01', 'Setup', 'Teams and title assignments'],
@@ -452,11 +710,7 @@ function Row({ data }) {
       </nav>
       {rowTab === 'saved' ? (
         <Card title="Saved roster">
-          <div className="flex min-h-56 flex-col items-center justify-center text-center">
-            <p className="text-sm text-gray-300">No saved RoW roster</p>
-            <p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generated rosters will appear here once roster saving is connected. Start a new generation to configure teams and delegates.</p>
-            <button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button>
-          </div>
+          {savedRoster ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{savedRoster.teams.map((team) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex justify-between"><span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</span><span className="font-mono text-[10px] text-amber-300">{team.players.length + team.titles.length} players</span></div><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p><p className="mt-2 text-xs leading-relaxed text-gray-400">{team.players.map((player) => player.name).join(' · ') || 'No automatic members.'}</p></div>)}</div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><p className="text-sm text-gray-300">No saved RoW roster</p><p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generate and save a roster to make the team assignments available across leadership devices.</p><button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button></div>}
         </Card>
       ) : (
       <>
@@ -466,74 +720,66 @@ function Row({ data }) {
       {generateStep === 1 ? <Card title="01 / Team setup">
         <p className="mt-2 text-xs leading-relaxed text-gray-500">Choose how many teams to create, then assign the six RoW titles to players. Title holders are reserved and will not be added as automatic members.</p>
         <div className="mt-4 flex items-center gap-3"><label className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">Number of teams <input type="number" min="1" max="20" value={teamCount} onChange={(event) => { const nextCount = Math.max(1, Math.min(20, Number(event.target.value) || 1)); setTeamCount(nextCount); setTitleAssignments((current) => Object.fromEntries(Object.entries(current).filter(([key]) => Number(key.split(':')[0]) < nextCount))); }} className="ml-2 w-16 rounded border border-gray-800 bg-transparent px-2 py-1.5 text-center text-gray-200 outline-none" /></label></div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} titles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="flex items-center justify-between gap-2 text-xs text-gray-500"><span>{title}</span><select value={currentId} onChange={(event) => setTitlePlayer(teamIndex, title, event.target.value)} className="min-w-0 max-w-36 rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none"><option value="">Unassigned</option>{candidates.filter((player) => !unavailable.has(player.id)).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>; })}</div></div>)}</div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><label className="block"><span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} name</span><input value={teamNames[teamIndex] || ''} onChange={(event) => setTeamName(teamIndex, event.target.value)} placeholder={`Team ${teamIndex + 1}`} className="mt-2 w-full rounded border border-gray-800 bg-discord-bg-darker px-2 py-1.5 text-sm text-gray-200 outline-none placeholder:text-gray-700 focus:border-gray-600" /></label><p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Titles</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-xs text-gray-500"><span className="truncate">{title}</span><PlayerCombobox title={title} candidates={candidates} selectedId={currentId} unavailableIds={unavailable} onChange={(id) => setTitlePlayer(teamIndex, title, id)} /></label>; })}</div></div>)}</div>
         <div className="mt-5 flex justify-end"><button type="button" onClick={() => setGenerateStep(2)} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06]">Next: select members</button></div>
       </Card> : null}
       {generateStep === 2 ? <Card title="02 / Member selection">
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">Select the members to include. Title holders are already reserved and excluded from this list.</p><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{selectedPlayers.length} selected</p></div>
-      <Card title="01 / Configure candidate signals">
-        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-          <label className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Minimum active intervals</span><select value={minimumActivity} onChange={(event) => setMinimumActivity(Number(event.target.value))} className="mt-2 w-full bg-transparent text-sm text-gray-300 outline-none"><option value={0}>Any activity</option><option value={1}>At least 1</option><option value={3}>At least 3</option><option value={5}>At least 5</option></select></label>
-          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3 text-xs text-gray-400"><input type="checkbox" checked={combatOnly} onChange={(event) => setCombatOnly(event.target.checked)} className="accent-amber-400" /> Require recent combat activity</label>
-          <div className="rounded-md border border-dashed border-gray-800 px-3 py-2 text-xs leading-relaxed text-gray-600">Percentiles are calculated among eligible players. Missing historical records are excluded.</div>
+        <div className="mt-2 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-sm text-gray-200">Choose your members</p><p className="mt-1 text-xs text-gray-600">Title holders are already assigned and do not appear here. Candidates are ranked by score.</p></div>
+            <div className="flex items-baseline gap-2"><span className="font-mono text-2xl text-amber-300">{selectedPlayers.length}</span><span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">selected</span></div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <label className="flex items-center gap-2 rounded border border-gray-800 bg-discord-bg-darker px-3 py-2"><Search className="h-3.5 w-3.5 shrink-0 text-gray-600" /><span className="sr-only">Search candidates</span><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="Search name, game ID, or alliance" className="min-w-0 flex-1 bg-transparent text-sm text-gray-300 outline-none placeholder:text-gray-700" /></label>
+            <button type="button" onClick={selectAllVisible} disabled={!filteredCandidatePool.length} className="rounded border border-gray-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-amber-300 disabled:opacity-30">Select {memberQuery.trim() ? 'matches' : 'all'}</button>
+            <button type="button" onClick={unselectAllVisible} disabled={!filteredCandidatePool.length} className="rounded border border-gray-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-amber-300 disabled:opacity-30">Clear {memberQuery.trim() ? 'matches' : 'all'}</button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+            <div className="relative flex items-center gap-2"><label className="flex items-center gap-2">Activity<select value={minimumActivity} onChange={(event) => setMinimumActivity(Number(event.target.value))} className="rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none"><option value={0}>Any</option><option value={1}>1+ intervals</option><option value={3}>3+ intervals</option><option value={5}>5+ intervals</option></select></label><button type="button" onClick={() => setFilterInfo((current) => current === 'activity' ? null : 'activity')} className="text-gray-600 transition hover:text-amber-300" aria-label="Activity filter information" aria-expanded={filterInfo === 'activity'}><Info className="h-3.5 w-3.5" /></button>{filterInfo === 'activity' ? <div className="absolute left-0 top-8 z-30 w-64 rounded border border-gray-700 bg-discord-bg-darker p-3 text-[11px] leading-relaxed text-gray-400 shadow-xl">Activity intervals count snapshot periods where the player showed measurable progression, such as power, kills, merits, or healing increases.</div> : null}</div>
+            <div className="relative flex items-center gap-2"><label className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={combatOnly} onChange={(event) => setCombatOnly(event.target.checked)} className="accent-amber-400" /> Recent combat only</label><button type="button" onClick={() => setFilterInfo((current) => current === 'combat' ? null : 'combat')} className="text-gray-600 transition hover:text-amber-300" aria-label="Recent combat information" aria-expanded={filterInfo === 'combat'}><Info className="h-3.5 w-3.5" /></button>{filterInfo === 'combat' ? <div className="absolute left-0 top-8 z-30 w-64 rounded border border-gray-700 bg-discord-bg-darker p-3 text-[11px] leading-relaxed text-gray-400 shadow-xl">Shows only players with positive recent combat movement, based on kills, healing, merits, and deaths in the reporting window.</div> : null}</div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-800 pt-3"><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{filteredCandidatePool.length} available{memberQuery.trim() ? ` · matching “${memberQuery.trim()}”` : ''}</p><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">Page {candidatePage} / {candidatePageCount}</p></div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-gray-600">Candidate score uses normalized percentiles</p>
-          <details className="relative">
-            <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded border border-gray-800 text-gray-500 transition hover:border-gray-600 hover:text-amber-300" aria-label="Show scoring breakdown"><Info className="h-3.5 w-3.5" /></summary>
-            <div className="absolute right-0 z-30 mt-2 w-72 rounded-md border border-gray-700 bg-discord-bg-darker p-3 shadow-xl">
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-300">Scoring breakdown</p>
-              <div className="mt-3 space-y-2 text-xs">{[['RoW performance', '40%', 'Historical matches, wins, league record, and highest score.'], ['Recent combat', '25%', 'Kill, merit, death, healing, and power movement.'], ['RoW consistency', '15%', 'Reliable activity across the snapshot window.'], ['Competitive performance', '10%', 'ToC placement, win rate, and battle count.'], ['Account capability', '10%', 'Power and available account-strength indicators.']].map(([label, weight, description]) => <div key={label} className="border-b border-gray-800 pb-2 last:border-0 last:pb-0"><div className="flex justify-between gap-3 text-gray-300"><span>{label}</span><span className="font-mono text-amber-300">{weight}</span></div><p className="mt-1 leading-relaxed text-gray-600">{description}</p></div>)}</div>
-              <p className="mt-3 text-[10px] leading-relaxed text-gray-600">Missing historical data is excluded and the remaining weights are renormalized. This is a selection aid, not a guaranteed result.</p>
-            </div>
-          </details>
-        </div>
-      </Card>
-      <Card title={`Candidate pool · ${candidates.length}`}>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">Select players for the confirmed roster. Scores are decision support, not guaranteed results.</p><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{selectedPlayers.length} selected</p></div>
-        <div className="mt-4 overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid grid-cols-[minmax(220px,1fr)_110px_80px_80px_80px_90px] gap-2 border-b border-gray-800 px-3 pb-2 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600"><span>Player</span><span>Recommendation</span><span className="text-right">RoW</span><span className="text-right">Activity</span><span className="text-right">Capability</span><span className="text-right">Candidate</span></div>
-            <div className="divide-y divide-gray-800/80">
-            {candidates.slice(0, 30).map((player) => <label key={player.id} className="flex cursor-pointer items-center gap-3 py-3 hover:bg-gray-500/[0.03]">
-              <input type="checkbox" checked={selected.includes(player.id)} onChange={() => toggleSelected(player.id)} className="accent-amber-400" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-neutral-200">{player.name}</span>
-                <span className="font-mono text-[10px] text-gray-600">{player.activity} · {player.activityDays} intervals · {player.power}</span>
-                <span className="mt-1 block font-mono text-[9px] text-gray-700">
-                  RoW {player.components.historical ?? '—'} · Activity {player.components.combat ?? '—'} · Consistency {player.components.consistency ?? '—'} · ToC {player.components.competitive ?? '—'} · Capability {player.components.capability ?? '—'}
-                </span>
-              </span>
-              <span className={`hidden w-20 text-right font-mono text-[10px] uppercase tracking-[0.12em] sm:block ${player.strength === 'Strong Candidate' ? 'text-amber-300' : player.strength === 'Consider' ? 'text-gray-300' : 'text-gray-600'}`}>{player.strength}</span>
-              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.historical ?? '—'}</span>
-              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.combat ?? '—'}</span>
-              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.capability ?? '—'}</span>
-              <span className="w-14 text-right font-mono text-xs text-amber-200">{player.score === null ? '—' : `${player.score}/100`}</span>
-            </label>)}
-            {!candidates.length ? <p className="py-8 text-center text-sm text-gray-500">No players match the current signals.</p> : null}
-            </div>
+        <div className="mt-3 overflow-hidden rounded-md border border-gray-800">
+          <div className="hidden grid-cols-[minmax(0,1fr)_110px_90px] gap-3 border-b border-gray-800 bg-gray-500/[0.03] px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600 sm:grid"><span>Player</span><span>Recommendation</span><span className="text-right">Score</span></div>
+          <div className="divide-y divide-gray-800/80">
+            {pageCandidates.map((player) => <div key={player.id} className="border-b border-gray-800/80 last:border-0"><div role="button" tabIndex={0} onClick={() => toggleSelected(player.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSelected(player.id); } }} className="flex cursor-pointer items-center gap-3 px-3 py-3 transition hover:bg-gray-500/[0.04]"><input type="checkbox" checked={selected.includes(player.id)} onChange={() => toggleSelected(player.id)} onClick={(event) => event.stopPropagation()} className="h-4 w-4 shrink-0 accent-amber-400" /><span className="min-w-0 flex-1"><span className="block truncate text-sm text-neutral-200">{player.name}</span><span className="mt-1 block truncate font-mono text-[10px] text-gray-600">{player.id} · {player.alliance || 'Unaffiliated'} · {player.activity}</span></span><span className={`hidden text-right font-mono text-[10px] uppercase tracking-[0.12em] sm:block ${player.strength === 'Strong Candidate' ? 'text-amber-300' : player.strength === 'Consider' ? 'text-gray-300' : 'text-gray-600'}`}>{player.strength}</span><span className="w-14 text-right font-mono text-sm text-amber-200">{player.score === null ? '—' : player.score}</span><button type="button" onClick={(event) => { event.stopPropagation(); setExpandedScoreId((current) => current === player.id ? null : player.id); }} className="shrink-0 rounded border border-gray-800 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-gray-500 transition hover:border-gray-600 hover:text-amber-300">{expandedScoreId === player.id ? 'Hide breakdown' : 'View score breakdown'}</button></div>{expandedScoreId === player.id ? <div className="mx-3 mb-3 rounded border border-gray-800 bg-black/10 p-3"><div className="flex flex-wrap items-end justify-between gap-2"><div><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">Scoreboard</p><p className="mt-1 text-sm text-gray-200">{player.name}</p></div><p className="font-mono text-xl text-amber-300">{player.score === null ? '—' : `${player.score}/100`}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-5">{[['RoW performance', player.components.historical, '40%'], ['Recent combat', player.components.combat, '25%'], ['Consistency', player.components.consistency, '15%'], ['Competitive', player.components.competitive, '10%'], ['Capability', player.components.capability, '10%']].map(([label, value, weight]) => <div key={label} className="rounded border border-gray-800 px-2.5 py-2"><div className="flex items-center justify-between gap-2"><span className="text-[11px] text-gray-400">{label}</span><span className="font-mono text-[9px] text-gray-600">{weight}</span></div><p className="mt-1 font-mono text-lg text-amber-200">{value ?? '—'}</p><div className="mt-1 h-1 overflow-hidden rounded bg-gray-800"><div className="h-full rounded bg-amber-400" style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} /></div></div>)}</div><p className="mt-3 text-[10px] leading-relaxed text-gray-600">Each component is a percentile among eligible players. Missing components are excluded and the remaining weights are normalized before the final score is calculated.</p></div> : null}</div>)}
+            {!filteredCandidatePool.length ? <p className="px-3 py-10 text-center text-sm text-gray-500">No candidates match this search or the current filters.</p> : null}
           </div>
         </div>
-      </Card>
-      <div className="mt-4 flex justify-between"><button type="button" onClick={() => setGenerateStep(1)} className="rounded border border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 hover:text-gray-300">Back: setup</button><button type="button" onClick={() => setGenerateStep(3)} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06]">Next: distribute</button></div>
+        {filteredCandidatePool.length ? <div className="mt-3 flex items-center justify-between gap-3"><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">Showing {(candidatePage - 1) * PAGE_SIZE + 1}–{Math.min(candidatePage * PAGE_SIZE, filteredCandidatePool.length)} of {filteredCandidatePool.length}</p><div className="flex items-center gap-2"><button type="button" disabled={candidatePage === 1} onClick={() => setCandidatePage((page) => page - 1)} className="rounded border border-gray-800 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-500 disabled:opacity-30">Previous</button><button type="button" disabled={candidatePage === candidatePageCount} onClick={() => setCandidatePage((page) => page + 1)} className="rounded border border-gray-800 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-500 disabled:opacity-30">Next</button></div></div> : null}
+        <div className="mt-4 flex items-center justify-between gap-3"><button type="button" onClick={() => setGenerateStep(1)} className="rounded border border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 hover:text-gray-300">Back: setup</button><button type="button" onClick={() => setGenerateStep(3)} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06]">Next: distribute</button></div>
       </Card> : null}
       {generateStep === 3 ? <Card title="03 / Automatic distribution">
           <div className="mt-2 flex items-center justify-between gap-3"><p className="text-xs text-gray-500">Distribution is automatic and balances team power after reserving title holders.</p><button type="button" onClick={() => setGenerateStep(2)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 hover:text-gray-300">Back: members</button></div>
           <div className="mt-3 flex items-center justify-between gap-3"><div><p className="text-xs text-gray-500">{rosterPlayers.length} roster players · {titlePlayerIds.size} title assignments</p><p className="mt-1 text-[10px] text-gray-600">Title holders are reserved and excluded from automatic team members.</p></div><label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">Teams <input type="number" min="1" max="20" value={teamCount} onChange={(event) => { const nextCount = Math.max(1, Math.min(20, Number(event.target.value) || 1)); setTeamCount(nextCount); setTitleAssignments((current) => Object.fromEntries(Object.entries(current).filter(([key]) => Number(key.split(':')[0]) < nextCount))); }} className="w-14 rounded border border-gray-800 bg-transparent px-2 py-1 text-center text-gray-200 outline-none" /></label></div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} titles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="flex items-center justify-between gap-2 text-xs text-gray-500"><span>{title}</span><select value={currentId} onChange={(event) => setTitlePlayer(teamIndex, title, event.target.value)} className="min-w-0 max-w-36 rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none"><option value="">Unassigned</option>{candidates.filter((player) => !unavailable.has(player.id)).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>; })}</div></div>)}</div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{teams.map((team) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex justify-between"><span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</span><span className="font-mono text-[10px] text-amber-300">{team.players.length + team.titles.length} players</span></div><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p>{team.titles.length ? <div className="mt-2 space-y-1 border-b border-gray-800 pb-2">{team.titles.map(({ title, player }) => <p key={title} className="text-xs text-amber-200">{title}: <span className="text-gray-300">{player.name}</span></p>)}</div> : null}<p className="mt-2 text-xs leading-relaxed text-gray-400">{team.players.length ? team.players.map((player) => player.name).join(' · ') : 'No automatic members assigned.'}</p></div>)}</div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} titles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-xs text-gray-500"><span className="truncate">{title}</span><PlayerCombobox title={title} candidates={candidates} selectedId={currentId} unavailableIds={unavailable} onChange={(id) => setTitlePlayer(teamIndex, title, id)} /></label>; })}</div></div>)}</div>
+          <div className="mt-4 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm text-gray-200">Assign distributed members</p><p className="mt-1 text-xs text-gray-600">Each team supports up to {MAX_TEAM_PLAYERS} players, including title holders, plus {MAX_TEAM_RESERVES} reserves.</p></div><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{availableForDistribution.length} unassigned candidates</p></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+              <div className="relative min-w-0">
+                <button type="button" onClick={() => setAdditionalCandidateOpen((open) => !open)} className="flex min-h-10 w-full items-center justify-between gap-2 rounded border border-gray-800 bg-discord-bg-darker px-3 py-2 text-left text-xs text-gray-300">
+                  <span className="min-w-0 truncate">{additionalCandidateIds.length ? `${additionalCandidateIds.length} candidate${additionalCandidateIds.length === 1 ? '' : 's'} selected` : 'Add unselected candidates…'}</span>
+                  <span className="text-gray-600">▾</span>
+                </button>
+                {additionalCandidateOpen ? <div className="absolute left-0 right-0 top-11 z-40 rounded border border-gray-700 bg-discord-bg-darker p-2 shadow-xl">
+                  <input autoFocus value={additionalCandidateQuery} onChange={(event) => setAdditionalCandidateQuery(event.target.value)} placeholder="Search name, ID, or alliance" className="w-full rounded border border-gray-800 bg-black/10 px-2 py-1.5 text-xs text-gray-300 outline-none placeholder:text-gray-700" />
+                  <div className="mt-2 max-h-56 overflow-y-auto">
+                    {filteredAdditionalCandidates.map((player) => <label key={player.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-xs text-gray-300 hover:bg-gray-500/10"><input type="checkbox" checked={additionalCandidateIds.includes(player.id)} onChange={() => setAdditionalCandidateIds((current) => current.includes(player.id) ? current.filter((id) => id !== player.id) : [...current, player.id])} className="accent-amber-400" /><span className="min-w-0 flex-1 truncate">{player.name} <span className="font-mono text-[10px] text-gray-600">· {player.id}</span></span><span className="font-mono text-[10px] text-gray-600">{player.score ?? '—'}</span></label>)}
+                    {!filteredAdditionalCandidates.length ? <p className="px-2 py-3 text-xs text-gray-600">No unassigned candidates match.</p> : null}
+                  </div>
+                  <div className="mt-2 flex justify-between border-t border-gray-800 pt-2"><button type="button" onClick={() => setAdditionalCandidateIds([])} className="font-mono text-[9px] uppercase tracking-[0.1em] text-gray-600 hover:text-gray-300">Clear</button><button type="button" onClick={() => setAdditionalCandidateOpen(false)} className="font-mono text-[9px] uppercase tracking-[0.1em] text-amber-300">Done</button></div>
+                </div> : null}
+              </div>
+              <select value={additionalTeamIndex} onChange={(event) => setAdditionalTeamIndex(Number(event.target.value))} className="rounded border border-gray-800 bg-discord-bg-darker px-2 py-2 text-xs text-gray-300 outline-none">{teams.map((team, index) => <option key={team.name} value={index}>{team.name}</option>)}</select>
+              <select value={additionalRole} onChange={(event) => setAdditionalRole(event.target.value)} className="rounded border border-gray-800 bg-discord-bg-darker px-2 py-2 text-xs text-gray-300 outline-none"><option value="player">Player</option><option value="reserve">Reserve</option></select>
+              <button type="button" disabled={!canAddAdditionalCandidates} onClick={() => { setDistributionOverrides((current) => ({ ...current, ...Object.fromEntries(additionalCandidateIds.map((id) => [id, { teamIndex: additionalTeamIndex, role: additionalRole }])) })); setAdditionalCandidateIds([]); setAdditionalCandidateQuery(''); setAdditionalCandidateOpen(false); }} className="rounded border border-amber-400/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 disabled:cursor-not-allowed disabled:opacity-30">Add selected</button>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">{teams.map((team, teamIndex) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</p><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p></div><div className="text-right font-mono text-[9px] uppercase tracking-[0.1em]"><p className="text-amber-300">{team.players.length + team.titles.length}/{MAX_TEAM_PLAYERS} players</p><p className="text-gray-500">{team.reserves.length}/{MAX_TEAM_RESERVES} reserves</p></div></div>{team.titles.length ? <div className="mt-3 border-b border-gray-800 pb-2"><p className="mb-1 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Title holders</p>{team.titles.map(({ title, player }) => <p key={title} className="text-xs text-amber-200">{title}: <span className="text-gray-300">{player.name}</span></p>)}</div> : null}<div className="mt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Players</p>{team.players.length ? team.players.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'player' }; return <div key={player.id} className="mt-1 flex items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-300">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'reserve')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'reserve')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Reserve</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No players assigned.</p>}</div><div className="mt-3 border-t border-gray-800 pt-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p>{team.reserves.length ? team.reserves.map((player) => { const assignment = assignments[player.id] || { teamIndex, role: 'reserve' }; return <div key={player.id} className="mt-1 flex items-center gap-2 rounded border border-gray-800/80 px-2 py-1.5"><span className="min-w-0 flex-1 truncate text-xs text-gray-400">{player.name}</span><select value={assignment.teamIndex} onChange={(event) => { const nextTeam = Number(event.target.value); if (canAssign(player.id, nextTeam, assignment.role)) setDistributionAssignment(player.id, nextTeam, assignment.role); }} className="w-20 rounded border border-gray-800 bg-discord-bg-darker px-1 py-1 text-[10px] text-gray-500 outline-none">{teams.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}</select><button type="button" disabled={!canAssign(player.id, teamIndex, 'player')} onClick={() => setDistributionAssignment(player.id, teamIndex, 'player')} className="rounded border border-gray-800 px-1.5 py-1 font-mono text-[9px] text-gray-500 hover:text-amber-300 disabled:opacity-30">Player</button></div>; }) : <p className="mt-1 text-xs text-gray-600">No reserves assigned.</p>}</div></div>)}</div>
+          <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-red-300">{rosterSaveError}</p><button type="button" onClick={saveRoster} disabled={savingRoster || !teams.length} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06] disabled:cursor-not-allowed disabled:opacity-40">{savingRoster ? 'Saving roster…' : 'Save roster'}</button></div>
       </Card>
       : null}
-      <Card title="How to read the recommendations">
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {[
-            ['RoW Performance', 'Historical score, match record, wins/losses, league record, and highest score. This is the strongest signal when available.'],
-            ['Current Activity', 'Recent kill, merit, death, healing, and power movement, plus consistency across the rolling snapshot window.'],
-            ['Combat Capability', 'Account power and available T4/T5 or hero indicators. Capability is capacity, not proof of RoW performance.'],
-          ].map(([title, description]) => <div key={title} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400">{title}</p><p className="mt-2 text-xs leading-relaxed text-gray-600">{description}</p></div>)}
-        </div>
-        <p className="mt-3 text-xs text-gray-600">Leadership should treat these recommendations as selection support. Actual RoW results remain the definitive performance record.</p>
-      </Card>
       </>
       )}
     </div>
