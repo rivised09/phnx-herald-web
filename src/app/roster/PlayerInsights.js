@@ -382,27 +382,47 @@ function MilestoneBars({ rows }) {
   return (
     <Section title="Milestones" hint="Next round-number target for each tracked stat.">
       {rows.length ? (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <div key={row.key}>
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="text-neutral-200">{row.label}</span>
-                <span className="font-mono text-[11px] text-gray-500">
-                  {row.currentText} / {row.targetText}
-                  <span className="ml-2 text-gray-600">
-                    {Math.round(row.pct)}% · {row.remainingText} to go
+        <table className="w-full table-fixed border-collapse text-left">
+          <thead>
+            <tr className="border-b border-gray-800 font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">
+              <th className="py-1.5 pr-2 font-normal">Stat</th>
+              <th className="w-20 py-1.5 pr-2 text-right font-normal sm:w-24">Now / target</th>
+              <th className="w-14 py-1.5 pr-2 font-normal sm:w-32">To target</th>
+              <th className="w-9 py-1.5 text-right font-normal sm:w-10">%</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-800/60">
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <td className="py-2 pr-2 align-middle">
+                  <span className="block truncate text-xs text-neutral-200">{row.label}</span>
+                  <span className="mt-0.5 block truncate font-mono text-[10px] text-gray-600">
+                    {row.remainingText} to go
                   </span>
-                </span>
-              </div>
-              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                <div
-                  className="h-full rounded-full bg-amber-400"
-                  style={{ width: `${Math.max(2, row.pct)}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+                </td>
+
+                <td className="py-2 pr-2 text-right align-middle font-mono text-[11px] tabular-nums">
+                  <span className="text-neutral-100">{row.currentText}</span>
+                  <span className="text-gray-600"> / {row.targetText}</span>
+                </td>
+
+                <td className="py-2 pr-2 align-middle">
+                  <span className="block h-1 w-full overflow-hidden rounded-full bg-gray-800">
+                    <span
+                      className="block h-full rounded-full bg-amber-400"
+                      style={{ width: `${Math.max(2, Math.round(row.pct))}%` }}
+                    />
+                  </span>
+                </td>
+
+                <td className="py-2 text-right align-middle font-mono text-[11px] tabular-nums text-neutral-200">
+                  {Math.round(row.pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : (
         <Empty>No tracked stat in this area has a value yet.</Empty>
       )}
@@ -473,6 +493,21 @@ export default function PlayerInsights({
   } = insights;
 
   const earned = badges.filter((item) => item.earned);
+  // Badges ship with their own group and the date they were crossed, so the
+  // records tab can present them as an ordered award list per subject instead
+  // of one undifferentiated pile of chips. Earned first, then closest to done.
+  const groupedBadges = badges.reduce((groups, badge) => {
+    const group = badge.group || 'Other';
+    (groups[group] ||= []).push(badge);
+    return groups;
+  }, {});
+  Object.values(groupedBadges).forEach((items) =>
+    items.sort((a, b) => Number(b.earned) - Number(a.earned) || b.pct - a.pct),
+  );
+  const recentBadge =
+    earned
+      .filter((item) => item.earnedOn)
+      .sort((a, b) => b.earnedOn.localeCompare(a.earnedOn))[0] || null;
   const pending = coverage.missing.length
     ? `Awaiting detail capture: ${coverage.missing.join(', ')}. These appear once the background pass has read this player's page.`
     : null;
@@ -638,41 +673,94 @@ export default function PlayerInsights({
             title="Milestones earned"
             hint="Phoenix Herald's own badges, awarded on absolute figures."
             action={
-              <span className="font-mono text-[10px] text-gray-600">
-                {earned.length}/{badges.length}
+              <span className="flex items-center gap-2">
+                <span className="h-1 w-14 overflow-hidden rounded-full bg-gray-800">
+                  <span
+                    className="block h-full rounded-full bg-amber-400"
+                    style={{
+                      width: `${
+                        badges.length ? Math.round((earned.length / badges.length) * 100) : 0
+                      }%`,
+                    }}
+                  />
+                </span>
+                <span className="font-mono text-[10px] tabular-nums text-gray-600">
+                  {earned.length}/{badges.length}
+                </span>
               </span>
             }
           >
-            <div className="flex flex-wrap gap-2">
-              {badges.map((badge) => (
-                <span
-                  key={badge.key}
-                  className={
-                    badge.earned
-                      ? 'inline-flex items-center gap-1.5 rounded-sm bg-amber-500/15 px-2 py-1 text-[11px] text-amber-300'
-                      : 'inline-flex items-center gap-1.5 rounded-sm border border-gray-800 px-2 py-1 text-[11px] text-gray-600'
-                  }
-                >
-                  <Trophy className={`h-3 w-3 ${badge.earned ? 'text-amber-400' : 'text-gray-700'}`} />
-                  {badge.label}
-                  {badge.earned ? null : (
-                    <span className="font-mono text-[10px] text-gray-700">
-                      {Math.round(badge.pct)}%
-                    </span>
-                  )}
-                </span>
-              ))}
-              {!badges.length ? (
-                <p className="text-xs text-gray-600">Badges appear once figures are captured.</p>
-              ) : null}
-            </div>
-            {earned.length ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-600">
+            {badges.length ? (
+              <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+                {Object.entries(groupedBadges).map(([group, items]) => (
+                  <div key={group} className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-3 border-b border-gray-800 pb-1.5">
+                      <h4 className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                        {group}
+                      </h4>
+                      <span className="font-mono text-[10px] tabular-nums text-gray-600">
+                        {items.filter((item) => item.earned).length}/{items.length}
+                      </span>
+                    </div>
+
+                    <ul>
+                      {items.map((badge) => (
+                        <li
+                          key={badge.key}
+                          className="flex items-center gap-3 border-b border-gray-800/60 py-2"
+                        >
+                          <Trophy
+                            className={`h-3.5 w-3.5 shrink-0 ${
+                              badge.earned ? 'text-amber-400' : 'text-gray-700'
+                            }`}
+                          />
+                          <span
+                            className={`min-w-0 flex-1 truncate text-xs ${
+                              badge.earned ? 'text-neutral-100' : 'text-gray-500'
+                            }`}
+                          >
+                            {badge.label}
+                          </span>
+
+                          {badge.earned ? (
+                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-gray-600">
+                              {badge.earnedOn || 'Earned'}
+                            </span>
+                          ) : (
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="h-1 w-12 overflow-hidden rounded-full bg-gray-800">
+                                <span
+                                  className="block h-full rounded-full bg-amber-500/70"
+                                  style={{
+                                    width: `${Math.max(2, Math.round(badge.pct))}%`,
+                                  }}
+                                />
+                              </span>
+                              <span className="w-7 text-right font-mono text-[10px] tabular-nums text-gray-600">
+                                {Math.round(badge.pct)}%
+                              </span>
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-600">Badges appear once figures are captured.</p>
+            )}
+
+            {recentBadge ? (
+              <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-800 pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">
                 <TrendingUp className="h-3 w-3 text-emerald-400" />
-                Most recent: {earned[earned.length - 1].label}
-                {earned[earned.length - 1].earnedOn
-                  ? ` on ${earned[earned.length - 1].earnedOn}`
-                  : ''}
+                <span>Most recent</span>
+                <span className="normal-case tracking-normal text-neutral-300">
+                  {recentBadge.label}
+                </span>
+                {recentBadge.earnedOn ? (
+                  <span className="tabular-nums">· {recentBadge.earnedOn}</span>
+                ) : null}
               </p>
             ) : null}
           </Section>

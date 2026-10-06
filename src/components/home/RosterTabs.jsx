@@ -25,7 +25,7 @@ export default function RosterTabs({ tabs = [] }) {
   if (!current) return null;
 
   return (
-    <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-surface">
+    <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
       <div
         role="tablist"
         aria-label="Roster categories"

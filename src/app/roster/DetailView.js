@@ -59,7 +59,7 @@ export default function DetailView({ kind, data }) {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-surface">
+      <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
         {player ? (
           <div className="relative overflow-hidden border-b border-gray-800">
             <div
