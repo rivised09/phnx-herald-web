@@ -1,5 +1,10 @@
 import { unstable_cache } from 'next/cache';
-import { getAllianceDetail, getPlayerDetail, getStoredRoster } from './store';
+import {
+  getAllianceDetail,
+  getLeadershipDashboard,
+  getPlayerDetail,
+  getStoredRoster,
+} from './store';
 
 /**
  * The roster reads behind a small cache, so a page is served from the data
@@ -39,6 +44,11 @@ const readPlayerDated = unstable_cache(
   { revalidate: PINNED_TTL, tags: ['roster'] },
 );
 
+const readLeadership = unstable_cache(getLeadershipDashboard, ['roster:leadership'], {
+  revalidate: LATEST_TTL,
+  tags: ['roster'],
+});
+
 const readAllianceCached = unstable_cache(
   (id) => getAllianceDetail(id),
   ['roster:alliance'],
@@ -46,6 +56,8 @@ const readAllianceCached = unstable_cache(
 );
 
 export { readHomeRoster };
+export { getLeadershipDashboard };
+export { readLeadership };
 
 /**
  * A player at one date, or at the newest one.

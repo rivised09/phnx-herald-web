@@ -76,6 +76,212 @@ async function historicalAvatarMap(serverIdValue, lordIds) {
   return result;
 }
 
+  const LEADERSHIP_METRICS = ['Units Killed', 'Merits', 'Units Healed', 'Units Dead'];
+
+function compactNumber(value) {
+  if (value === null || value === undefined) return '—';
+  if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+  if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (Math.abs(value) >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
+  return Math.round(value).toLocaleString();
+}
+
+export async function getLeadershipDashboard() {
+  const number = Number(serverId());
+  const server = await prisma.sourceServer.findUnique({ where: { serverNumber: number } });
+  if (!server) return null;
+
+  const today = new Date();
+  const windowStart = new Date(Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() - 7,
+  ));
+  const snapshots = await prisma.rosterSnapshot.findMany({
+    where: { serverId: server.id, status: 'COMPLETE', snapshotDate: { gte: windowStart } },
+    orderBy: { snapshotDate: 'asc' },
+    select: { id: true, snapshotDate: true, lordCount: true },
+  });
+  const latest = snapshots[snapshots.length - 1];
+  if (!latest) return null;
+  const baseline = snapshots[0];
+
+  const [currentRows, snapshotRows] = await Promise.all([
+    prisma.lordSnapshot.findMany({
+      where: { snapshotId: latest.id },
+      include: { lord: true, alliance: true },
+      orderBy: { rank: 'asc' },
+    }),
+    prisma.lordSnapshot.findMany({
+      where: { snapshotId: { in: snapshots.map((item) => item.id) } },
+      select: { snapshotId: true, lordId: true, power: true },
+    }),
+  ]);
+  const lordIds = currentRows.map((row) => row.lordId);
+  const metricRows = await prisma.snapshotMetric.findMany({
+    where: {
+      snapshotId: { in: snapshots.map((item) => item.id) },
+      subjectType: 'LORD',
+      label: { in: LEADERSHIP_METRICS },
+      subjectId: { in: lordIds },
+    },
+    select: { snapshotId: true, subjectId: true, label: true, section: true, valueNumber: true },
+  });
+  const baselineRows = snapshotRows.filter((row) => row.snapshotId === baseline.id);
+  const rowsByLord = new Map();
+  snapshotRows.forEach((row) => {
+    if (!rowsByLord.has(row.lordId)) rowsByLord.set(row.lordId, []);
+    rowsByLord.get(row.lordId).push(row);
+  });
+  const metricsByLord = new Map();
+  metricRows.forEach((row) => {
+    if (!metricsByLord.has(row.subjectId)) metricsByLord.set(row.subjectId, new Map());
+    const bySnapshot = metricsByLord.get(row.subjectId);
+    if (!bySnapshot.has(row.snapshotId)) bySnapshot.set(row.snapshotId, []);
+    bySnapshot.get(row.snapshotId).push(row);
+  });
+
+  function metricAt(rows, label) {
+    const matches = rows.filter((item) => item.label === label);
+    const preferred = matches.find((item) => item.section === 'War Stats') || matches[0];
+    return preferred?.valueNumber === null || preferred?.valueNumber === undefined
+      ? null
+      : Number(preferred.valueNumber);
+  }
+
+  const players = currentRows.map((row) => {
+    const history = metricsByLord.get(row.lordId) || new Map();
+    const observations = snapshots
+      .map((snapshot, index) => {
+        const values = history.get(snapshot.id) || [];
+        const powerRow = (rowsByLord.get(row.lordId) || []).find(
+          (item) => item.snapshotId === snapshot.id,
+        );
+        return {
+          index,
+          values: {
+            kills: metricAt(values, 'Units Killed'),
+            deaths: metricAt(values, 'Units Dead'),
+            healing: metricAt(values, 'Units Healed'),
+            merits: metricAt(values, 'Merits'),
+          },
+          power: powerRow ? Number(powerRow.power) : null,
+        };
+      })
+      .filter((item) => Object.values(item.values).some((value) => value !== null) || item.power !== null);
+    const first = observations[0] || null;
+    const metricObservations = observations.filter((item) =>
+      Object.values(item.values).some((value) => value !== null),
+    );
+    const firstMetric = metricObservations[0] || null;
+    const lastMetric = metricObservations[metricObservations.length - 1] || null;
+    const current = lastMetric?.values || {};
+    const previousValues = firstMetric?.values || {};
+    const powerChange = first?.power === null || first?.power === undefined
+      ? null
+      : Number(row.power) - first.power;
+    const changes = Object.fromEntries(
+      Object.keys(current).map((key) => [
+        key,
+        current[key] !== null && previousValues[key] !== null
+          ? current[key] - previousValues[key]
+          : null,
+      ]),
+    );
+    const activeObservations = observations.slice(1).filter((observation, index) => {
+      const before = observations[index].values;
+      return ['kills', 'merits', 'healing'].some(
+        (key) =>
+          before[key] !== null &&
+          observation.values[key] !== null &&
+          observation.values[key] > before[key],
+      ) || (observations[index].power !== null &&
+        observation.power !== null &&
+        observation.power > observations[index].power);
+    }).length;
+    const activity = activeObservations >= 6
+      ? 'Highly Active'
+      : activeObservations >= 4
+        ? 'Active'
+        : activeObservations >= 1
+          ? 'Low Activity'
+          : 'Dormant';
+    const status = activity === 'Highly Active' ? 'Core Fighter' : activity === 'Active' ? 'Support' : activity === 'Dormant' ? 'Dormant' : 'Monitor';
+    return {
+      id: row.lord.sourceId.toString(),
+      name: row.lord.name,
+      power: compactNumber(Number(row.power)),
+      powerValue: Number(row.power),
+      activity,
+      status,
+      powerChange,
+      changes,
+      activityDays: activeObservations,
+      kills: current.kills,
+      merits: current.merits,
+      healing: current.healing,
+      deaths: current.deaths,
+      alliance: row.alliance?.name || 'Unaffiliated',
+    };
+  });
+
+  const highPowerLowActivity = players.filter(
+    (player) => player.powerValue >= 25000000 && player.activity === 'Low Activity',
+  ).length;
+  const lowActivity = players.filter((player) => player.activity === 'Low Activity').length;
+  const highActivity = players.filter((player) => player.activity === 'Highly Active' || player.activity === 'Active').length;
+  const kingdomPower = currentRows.reduce((sum, row) => sum + Number(row.power), 0);
+  const previousPower = baselineRows.reduce((sum, row) => sum + Number(row.power), 0);
+  const sumChange = (key) => players.reduce((sum, player) => sum + (player.changes[key] || 0), 0);
+  const recentChanges = {
+    power: players.reduce((sum, player) => sum + (player.powerChange || 0), 0),
+    kills: sumChange('kills'),
+    deaths: sumChange('deaths'),
+    healing: sumChange('healing'),
+    merits: sumChange('merits'),
+  };
+
+  return {
+    server: number,
+    snapshotDate: latest.snapshotDate.toISOString().slice(0, 10),
+    periodStart: baseline.snapshotDate.toISOString().slice(0, 10),
+    periodEnd: latest.snapshotDate.toISOString().slice(0, 10),
+    snapshotCount: snapshots.length,
+    kingdom: {
+      power: compactNumber(kingdomPower),
+      powerChange:
+        previousPower > 0 ? `${(((kingdomPower - previousPower) / previousPower) * 100).toFixed(1)}%` : '—',
+      lords: currentRows.length,
+      lordChange: baseline.id === latest.id ? null : currentRows.length - baselineRows.length,
+      activity: highActivity ? 'High' : 'Low',
+    },
+    activityCounts: {
+      active: players.filter((player) => player.activity === 'Active' || player.activity === 'Highly Active').length,
+      low: lowActivity,
+      dormant: players.filter((player) => player.activity === 'Dormant').length,
+    },
+    recentChanges,
+    biggestKillGrowth: [...players].filter((player) => player.changes.kills !== null).sort((a, b) => b.changes.kills - a.changes.kills).slice(0, 5),
+    attention: [
+      highPowerLowActivity
+        ? `${highPowerLowActivity} high-power players have shown very low recent activity`
+        : 'No high-power inactivity threshold has been triggered',
+      `${lowActivity} players have no measurable progression in the latest scan`,
+      baseline.id === latest.id
+        ? 'A second snapshot this week is required for change detection'
+        : `Changes are aggregated from ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'} this week`,
+      `${highActivity} players showed measurable combat or merit growth`,
+    ],
+    readiness: {
+      ready: players.filter((player) => player.activity === 'Highly Active' || player.activity === 'Active').length,
+      support: players.filter((player) => player.status === 'Support').length,
+      lowActivity,
+      dormant: players.filter((player) => player.activity === 'Dormant').length,
+    },
+    players: players.sort((a, b) => b.powerValue - a.powerValue),
+  };
+}
+
 export async function getStoredRoster() {
   let number;
   let url;
@@ -85,6 +291,8 @@ export async function getStoredRoster() {
   } catch (err) {
     return failure('not_configured', err.message);
   }
+
+
 
   const server = await prisma.sourceServer.findUnique({ where: { serverNumber: number } });
   if (!server) {
