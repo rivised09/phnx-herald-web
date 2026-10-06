@@ -45,22 +45,22 @@ export default function RosterTabs({ tabs = [] }) {
               onClick={() => setActive(tab.key)}
               className={`group inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 font-mono uppercase tracking-[0.16em] transition ${
                 selected
-                  ? 'border-amber-500/40 bg-amber-500/15 text-amber-100 shadow-[0_10px_22px_-16px_rgba(245,158,11,0.9)]'
-                  : 'border-transparent text-gray-400 hover:border-gray-800 hover:bg-white/[0.04] hover:text-neutral-200'
+                  ? 'border-amber-500/50 text-amber-300'
+                  : 'border-transparent text-gray-400 hover:border-gray-800 hover:bg-white/[0.03] hover:text-neutral-200'
               }`}
             >
               {Icon ? (
                 <Icon
                   className={`h-3.5 w-3.5 shrink-0 transition ${
-                    selected ? 'text-amber-300' : 'text-gray-600 group-hover:text-gray-500'
+                    selected ? 'text-amber-400' : 'text-gray-600 group-hover:text-gray-500'
                   }`}
                   aria-hidden="true"
                 />
               ) : null}
               <span className="truncate text-[11px]">{tab.label}</span>
               <span
-                className={`rounded-sm px-1.5 py-0.5 text-[10px] tabular-nums transition ${
-                  selected ? 'bg-amber-400/20 text-amber-100' : 'bg-gray-800/80 text-gray-500'
+                className={`text-[10px] tabular-nums transition ${
+                  selected ? 'text-amber-400' : 'text-gray-600'
                 }`}
               >
                 {tab.count}
