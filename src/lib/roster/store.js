@@ -346,7 +346,8 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
   // Nothing below depends on anything else in this group, so they travel
   // together: the avatar history, the power/rank series and the metric rows
   // that feed the insights.
-  const [avatarByLord, historyRows, metricBuckets] = await Promise.all([
+  const [avatarByLord, historyRows, nameHistory, otherServerRows, metricBuckets] =
+    await Promise.all([
     historicalAvatarMap(lord.serverId, [row.lordId]),
     prisma.lordSnapshot.findMany({
       where: {
@@ -359,6 +360,21 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
         snapshot: { select: { snapshotDate: true } },
       },
       orderBy: { snapshot: { snapshotDate: 'asc' } },
+    }),
+    prisma.lordNameHistory.findMany({
+      where: { lordId: row.lordId },
+      select: { name: true },
+      orderBy: { firstSeen: 'asc' },
+    }),
+    prisma.lord.findMany({
+      where: {
+        sourceId: BigInt(sourceId),
+        serverId: { not: lord.serverId },
+      },
+      select: {
+        server: { select: { serverNumber: true } },
+      },
+      orderBy: { server: { serverNumber: 'asc' } },
     }),
     loadPlayerMetrics(lord.serverId, row.lordId, { snapshotDate: wanted }),
   ]);
@@ -394,6 +410,10 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     requestedDate: requested,
     isLatest: wanted === snapshotDates[0],
     history,
+    previousNames: nameHistory
+      .map((item) => item.name)
+      .filter((name) => name !== row.lord.name),
+    otherServers: otherServerRows.map((item) => item.server.serverNumber),
     sections,
     sectionsDate,
     insights,
