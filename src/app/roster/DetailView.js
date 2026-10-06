@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, Shield } from 'lucide-react';
+import { ArrowLeft, History, Shield } from 'lucide-react';
 import DetailSearch from '../../components/home/DetailSearch';
 import Avatar from './Avatar';
 import MemberList from './MemberList';
@@ -117,6 +117,52 @@ export default function DetailView({ kind, data }) {
             </div>
           </div>
         )}
+
+        {player && data.previousNames?.length ? (
+          <div className="border-b border-gray-800 px-4 py-3">
+            <div className="flex items-start gap-2.5">
+              <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
+                  Previous names
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {data.previousNames.map((name) => (
+                    <span
+                      key={name}
+                      className="max-w-full truncate rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 text-xs text-neutral-300"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {player && data.otherServers?.length ? (
+          <div className="border-b border-gray-800 px-4 py-3">
+            <div className="flex items-start gap-2.5">
+              <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
+              <div className="min-w-0">
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
+                  Also on servers
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {data.otherServers.map((number) => (
+                    <span
+                      key={number}
+                      className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-xs text-neutral-300"
+                    >
+                      #{number}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {player && profile && profile.rows.length ? (
           <div className="border-b border-gray-800 px-4 py-4">
