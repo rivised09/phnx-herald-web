@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Info, Search } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const PAGE_SIZE = 25;
@@ -11,6 +11,7 @@ const PAGE_SIZE = 25;
 const TABS = [
   ['overview', 'Overview'],
   ['players', 'Players'],
+  ['row', 'RoW'],
 ];
 
 const number = (value) => {
@@ -325,8 +326,222 @@ function Players({ data }) {
   );
 }
 
+function percentile(value, values) {
+  if (value === null || value === undefined || !values.length) return null;
+  if (values.length === 1) return 100;
+  const below = values.filter((item) => item < value).length;
+  const equal = values.filter((item) => item === value).length;
+  return Math.round(((below + (equal - 1) / 2) / (values.length - 1)) * 100);
+}
+
+function Row({ data }) {
+  const [rowTab, setRowTab] = useState('saved');
+  const [generateStep, setGenerateStep] = useState(1);
+  const [teamCount, setTeamCount] = useState(2);
+  const [selected, setSelected] = useState([]);
+  const [titleAssignments, setTitleAssignments] = useState({});
+  const [minimumActivity, setMinimumActivity] = useState(1);
+  const [combatOnly, setCombatOnly] = useState(false);
+
+  const candidates = useMemo(() => {
+    const base = data.players.map((player) => {
+      const kills = Math.max(0, player.changes.kills || 0);
+      const healing = Math.max(0, player.changes.healing || 0);
+      const merits = Math.max(0, player.changes.merits || 0);
+      const deaths = Math.max(0, player.changes.deaths || 0);
+      const row = player.row || {};
+      const toc = player.toc || {};
+      const rowPerformance = row.score ?? (row.matches > 0 ? ((row.wins || 0) / row.matches) * 100 : null);
+      const competitive = toc.winRate ?? (toc.battles > 0 ? ((toc.wins || 0) / toc.battles) * 100 : null);
+      return {
+        ...player,
+        rowPerformance: rowPerformance === null ? null : Number(rowPerformance),
+        rowMatches: row.matches || 0,
+        competitive: competitive === null ? null : Number(competitive),
+        combatRaw: kills * 2 + healing + merits * 10 - deaths * 0.25,
+        consistencyRaw: player.activityDays,
+        capabilityRaw: player.powerValue,
+      };
+    });
+    const values = (key) => base.map((player) => player[key]).filter((value) => value !== null && value !== undefined && Number.isFinite(value));
+    const historicalValues = values('rowPerformance');
+    const combatValues = values('combatRaw');
+    const consistencyValues = values('consistencyRaw');
+    const competitiveValues = values('competitive');
+    const capabilityValues = values('capabilityRaw');
+    return base.map((player) => {
+      const components = {
+        historical: percentile(player.rowPerformance, historicalValues),
+        combat: percentile(player.combatRaw, combatValues),
+        consistency: percentile(player.consistencyRaw, consistencyValues),
+        competitive: percentile(player.competitive, competitiveValues),
+        capability: percentile(player.capabilityRaw, capabilityValues),
+      };
+      const weights = { historical: 40, combat: 25, consistency: 15, competitive: 10, capability: 10 };
+      const availableWeight = Object.entries(components).reduce((sum, [key, value]) => sum + (value === null ? 0 : weights[key]), 0);
+      const score = availableWeight ? Math.round(Object.entries(components).reduce((sum, [key, value]) => sum + (value === null ? 0 : value * weights[key]), 0) / availableWeight) : null;
+      const recommendation = score === null ? 'Insufficient data' : score >= 70 ? 'Strong Candidate' : score >= 45 ? 'Consider' : 'Watch';
+      return {
+        ...player,
+        components,
+        score,
+        combatScore: components.combat,
+        strength: recommendation,
+        provisional: components.historical === null || components.competitive === null,
+      };
+    }).filter((player) => player.activityDays >= minimumActivity && (!combatOnly || player.combatRaw > 0))
+      .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.powerValue - a.powerValue);
+  }, [combatOnly, data.players, minimumActivity]);
+
+  const toggleSelected = (id) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const selectedPlayers = candidates.filter((player) => selected.includes(player.id));
+  const titles = ['Leader', 'Warmaster', 'Scholar', 'Envoy', 'Beastmaster', 'Saintess'];
+  const titleSlots = Array.from({ length: teamCount }, (_, teamIndex) => ({
+    teamIndex,
+    titles,
+  }));
+  const titlePlayerIds = new Set(Object.values(titleAssignments).filter(Boolean));
+  const rosterPlayers = candidates.filter((player) => selected.includes(player.id) || titlePlayerIds.has(player.id));
+  const setTitlePlayer = (teamIndex, title, id) => {
+    const key = `${teamIndex}:${title}`;
+    setTitleAssignments((current) => {
+      const next = { ...current };
+      if (id) next[key] = id;
+      else delete next[key];
+      return next;
+    });
+  };
+  const teams = useMemo(() => {
+    const result = Array.from({ length: teamCount }, (_, index) => ({
+      name: `Team ${index + 1}`,
+      titles: [],
+      players: [],
+      power: 0,
+      score: 0,
+    }));
+    result.forEach((team, teamIndex) => {
+      titles.forEach((title) => {
+        const player = candidates.find((item) => item.id === titleAssignments[`${teamIndex}:${title}`]);
+        if (player) {
+          team.titles.push({ title, player });
+          team.power += player.powerValue;
+          team.score += player.score || 0;
+        }
+      });
+    });
+    [...rosterPlayers].filter((player) => !titlePlayerIds.has(player.id)).sort((a, b) => b.powerValue - a.powerValue).forEach((player) => {
+      const team = result.reduce((lowest, current) => current.power < lowest.power ? current : lowest, result[0]);
+      team.players.push(player);
+      team.power += player.powerValue;
+      team.score += player.score || 0;
+    });
+    return result;
+  }, [candidates, rosterPlayers, teamCount, titleAssignments, titlePlayerIds]);
+
+  const steps = [
+    ['01', 'Setup', 'Teams and title assignments'],
+    ['02', 'Members', 'Confirm the roster pool'],
+    ['03', 'Distribution', 'Automatic team balancing'],
+  ];
+
+  return (
+    <div className="space-y-5">
+      <SectionHeading eyebrow="RoW / Candidate finder" title="RoW roster management" description="Open a saved roster or generate a new roster through a guided setup, member selection, and automatic distribution flow." />
+      <nav className="flex border-b border-gray-800" aria-label="RoW sections">
+        {[['saved', 'Saved roster'], ['generate', 'Generate roster']].map(([key, label]) => <button key={key} type="button" onClick={() => setRowTab(key)} className={`border-b-2 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${rowTab === key ? 'border-amber-400 text-amber-300' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>{label}</button>)}
+      </nav>
+      {rowTab === 'saved' ? (
+        <Card title="Saved roster">
+          <div className="flex min-h-56 flex-col items-center justify-center text-center">
+            <p className="text-sm text-gray-300">No saved RoW roster</p>
+            <p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generated rosters will appear here once roster saving is connected. Start a new generation to configure teams and delegates.</p>
+            <button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button>
+          </div>
+        </Card>
+      ) : (
+      <>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {steps.map(([step, title, description], index) => <button key={step} type="button" onClick={() => setGenerateStep(index + 1)} className={`flex gap-3 rounded-md border p-3 text-left transition ${generateStep === index + 1 ? 'border-amber-400/60 bg-amber-400/[0.04]' : 'border-gray-800 bg-discord-bg-darker hover:border-gray-700'}`}><span className={`font-mono text-xs ${generateStep === index + 1 ? 'text-amber-300' : 'text-gray-600'}`}>{step}</span><span><span className="block text-sm text-gray-200">{title}</span><span className="mt-1 block text-xs text-gray-600">{description}</span></span></button>)}
+      </div>
+      {generateStep === 1 ? <Card title="01 / Team setup">
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">Choose how many teams to create, then assign the six RoW titles to players. Title holders are reserved and will not be added as automatic members.</p>
+        <div className="mt-4 flex items-center gap-3"><label className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">Number of teams <input type="number" min="1" max="20" value={teamCount} onChange={(event) => { const nextCount = Math.max(1, Math.min(20, Number(event.target.value) || 1)); setTeamCount(nextCount); setTitleAssignments((current) => Object.fromEntries(Object.entries(current).filter(([key]) => Number(key.split(':')[0]) < nextCount))); }} className="ml-2 w-16 rounded border border-gray-800 bg-transparent px-2 py-1.5 text-center text-gray-200 outline-none" /></label></div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} titles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="flex items-center justify-between gap-2 text-xs text-gray-500"><span>{title}</span><select value={currentId} onChange={(event) => setTitlePlayer(teamIndex, title, event.target.value)} className="min-w-0 max-w-36 rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none"><option value="">Unassigned</option>{candidates.filter((player) => !unavailable.has(player.id)).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>; })}</div></div>)}</div>
+        <div className="mt-5 flex justify-end"><button type="button" onClick={() => setGenerateStep(2)} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06]">Next: select members</button></div>
+      </Card> : null}
+      {generateStep === 2 ? <Card title="02 / Member selection">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">Select the members to include. Title holders are already reserved and excluded from this list.</p><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{selectedPlayers.length} selected</p></div>
+      <Card title="01 / Configure candidate signals">
+        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <label className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Minimum active intervals</span><select value={minimumActivity} onChange={(event) => setMinimumActivity(Number(event.target.value))} className="mt-2 w-full bg-transparent text-sm text-gray-300 outline-none"><option value={0}>Any activity</option><option value={1}>At least 1</option><option value={3}>At least 3</option><option value={5}>At least 5</option></select></label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3 text-xs text-gray-400"><input type="checkbox" checked={combatOnly} onChange={(event) => setCombatOnly(event.target.checked)} className="accent-amber-400" /> Require recent combat activity</label>
+          <div className="rounded-md border border-dashed border-gray-800 px-3 py-2 text-xs leading-relaxed text-gray-600">Percentiles are calculated among eligible players. Missing historical records are excluded.</div>
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-gray-600">Candidate score uses normalized percentiles</p>
+          <details className="relative">
+            <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded border border-gray-800 text-gray-500 transition hover:border-gray-600 hover:text-amber-300" aria-label="Show scoring breakdown"><Info className="h-3.5 w-3.5" /></summary>
+            <div className="absolute right-0 z-30 mt-2 w-72 rounded-md border border-gray-700 bg-discord-bg-darker p-3 shadow-xl">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-300">Scoring breakdown</p>
+              <div className="mt-3 space-y-2 text-xs">{[['RoW performance', '40%', 'Historical matches, wins, league record, and highest score.'], ['Recent combat', '25%', 'Kill, merit, death, healing, and power movement.'], ['RoW consistency', '15%', 'Reliable activity across the snapshot window.'], ['Competitive performance', '10%', 'ToC placement, win rate, and battle count.'], ['Account capability', '10%', 'Power and available account-strength indicators.']].map(([label, weight, description]) => <div key={label} className="border-b border-gray-800 pb-2 last:border-0 last:pb-0"><div className="flex justify-between gap-3 text-gray-300"><span>{label}</span><span className="font-mono text-amber-300">{weight}</span></div><p className="mt-1 leading-relaxed text-gray-600">{description}</p></div>)}</div>
+              <p className="mt-3 text-[10px] leading-relaxed text-gray-600">Missing historical data is excluded and the remaining weights are renormalized. This is a selection aid, not a guaranteed result.</p>
+            </div>
+          </details>
+        </div>
+      </Card>
+      <Card title={`Candidate pool · ${candidates.length}`}>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">Select players for the confirmed roster. Scores are decision support, not guaranteed results.</p><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-600">{selectedPlayers.length} selected</p></div>
+        <div className="mt-4 overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[minmax(220px,1fr)_110px_80px_80px_80px_90px] gap-2 border-b border-gray-800 px-3 pb-2 font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600"><span>Player</span><span>Recommendation</span><span className="text-right">RoW</span><span className="text-right">Activity</span><span className="text-right">Capability</span><span className="text-right">Candidate</span></div>
+            <div className="divide-y divide-gray-800/80">
+            {candidates.slice(0, 30).map((player) => <label key={player.id} className="flex cursor-pointer items-center gap-3 py-3 hover:bg-gray-500/[0.03]">
+              <input type="checkbox" checked={selected.includes(player.id)} onChange={() => toggleSelected(player.id)} className="accent-amber-400" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-neutral-200">{player.name}</span>
+                <span className="font-mono text-[10px] text-gray-600">{player.activity} · {player.activityDays} intervals · {player.power}</span>
+                <span className="mt-1 block font-mono text-[9px] text-gray-700">
+                  RoW {player.components.historical ?? '—'} · Activity {player.components.combat ?? '—'} · Consistency {player.components.consistency ?? '—'} · ToC {player.components.competitive ?? '—'} · Capability {player.components.capability ?? '—'}
+                </span>
+              </span>
+              <span className={`hidden w-20 text-right font-mono text-[10px] uppercase tracking-[0.12em] sm:block ${player.strength === 'Strong Candidate' ? 'text-amber-300' : player.strength === 'Consider' ? 'text-gray-300' : 'text-gray-600'}`}>{player.strength}</span>
+              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.historical ?? '—'}</span>
+              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.combat ?? '—'}</span>
+              <span className="hidden w-16 text-right font-mono text-[10px] text-gray-500 sm:block">{player.components.capability ?? '—'}</span>
+              <span className="w-14 text-right font-mono text-xs text-amber-200">{player.score === null ? '—' : `${player.score}/100`}</span>
+            </label>)}
+            {!candidates.length ? <p className="py-8 text-center text-sm text-gray-500">No players match the current signals.</p> : null}
+            </div>
+          </div>
+        </div>
+      </Card>
+      <div className="mt-4 flex justify-between"><button type="button" onClick={() => setGenerateStep(1)} className="rounded border border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 hover:text-gray-300">Back: setup</button><button type="button" onClick={() => setGenerateStep(3)} className="rounded border border-amber-400/60 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 hover:bg-amber-400/[0.06]">Next: distribute</button></div>
+      </Card> : null}
+      {generateStep === 3 ? <Card title="03 / Automatic distribution">
+          <div className="mt-2 flex items-center justify-between gap-3"><p className="text-xs text-gray-500">Distribution is automatic and balances team power after reserving title holders.</p><button type="button" onClick={() => setGenerateStep(2)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500 hover:text-gray-300">Back: members</button></div>
+          <div className="mt-3 flex items-center justify-between gap-3"><div><p className="text-xs text-gray-500">{rosterPlayers.length} roster players · {titlePlayerIds.size} title assignments</p><p className="mt-1 text-[10px] text-gray-600">Title holders are reserved and excluded from automatic team members.</p></div><label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">Teams <input type="number" min="1" max="20" value={teamCount} onChange={(event) => { const nextCount = Math.max(1, Math.min(20, Number(event.target.value) || 1)); setTeamCount(nextCount); setTitleAssignments((current) => Object.fromEntries(Object.entries(current).filter(([key]) => Number(key.split(':')[0]) < nextCount))); }} className="w-14 rounded border border-gray-800 bg-transparent px-2 py-1 text-center text-gray-200 outline-none" /></label></div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">{titleSlots.map(({ teamIndex }) => <div key={teamIndex} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">Team {teamIndex + 1} titles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{titles.map((title) => { const key = `${teamIndex}:${title}`; const currentId = titleAssignments[key] || ''; const unavailable = new Set([...titlePlayerIds].filter((id) => id !== currentId)); return <label key={title} className="flex items-center justify-between gap-2 text-xs text-gray-500"><span>{title}</span><select value={currentId} onChange={(event) => setTitlePlayer(teamIndex, title, event.target.value)} className="min-w-0 max-w-36 rounded border border-gray-800 bg-discord-bg-darker px-2 py-1 text-xs text-gray-300 outline-none"><option value="">Unassigned</option>{candidates.filter((player) => !unavailable.has(player.id)).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>; })}</div></div>)}</div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{teams.map((team) => <div key={team.name} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><div className="flex justify-between"><span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">{team.name}</span><span className="font-mono text-[10px] text-amber-300">{team.players.length + team.titles.length} players</span></div><p className="mt-1 font-mono text-[10px] text-gray-600">Power {number(team.power)} · score {team.score}</p>{team.titles.length ? <div className="mt-2 space-y-1 border-b border-gray-800 pb-2">{team.titles.map(({ title, player }) => <p key={title} className="text-xs text-amber-200">{title}: <span className="text-gray-300">{player.name}</span></p>)}</div> : null}<p className="mt-2 text-xs leading-relaxed text-gray-400">{team.players.length ? team.players.map((player) => player.name).join(' · ') : 'No automatic members assigned.'}</p></div>)}</div>
+      </Card>
+      : null}
+      <Card title="How to read the recommendations">
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {[
+            ['RoW Performance', 'Historical score, match record, wins/losses, league record, and highest score. This is the strongest signal when available.'],
+            ['Current Activity', 'Recent kill, merit, death, healing, and power movement, plus consistency across the rolling snapshot window.'],
+            ['Combat Capability', 'Account power and available T4/T5 or hero indicators. Capability is capacity, not proof of RoW performance.'],
+          ].map(([title, description]) => <div key={title} className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400">{title}</p><p className="mt-2 text-xs leading-relaxed text-gray-600">{description}</p></div>)}
+        </div>
+        <p className="mt-3 text-xs text-gray-600">Leadership should treat these recommendations as selection support. Actual RoW results remain the definitive performance record.</p>
+      </Card>
+      </>
+      )}
+    </div>
+  );
+}
+
 export default function LeadershipClient({ data }) {
   const [tab, setTab] = useState('overview');
-  const content = { overview: <Overview data={data} />, players: <Players data={data} /> }[tab];
+  const content = { overview: <Overview data={data} />, players: <Players data={data} />, row: <Row data={data} /> }[tab];
   return <div className="space-y-5"><div><div className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500">03 / Leadership</div><h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">Leadership</h1><p className="mt-2 text-sm text-gray-500">Server {data.server} · rolling 7 days: {data.periodStart} → {data.periodEnd}</p></div><nav className="-mx-4 flex items-end border-b border-gray-800 px-4 pt-2 sm:mx-0 sm:px-0" aria-label="Leadership sections">{TABS.map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`relative -mb-px shrink-0 border border-b-0 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${tab === key ? 'border-gray-800 bg-discord-bg-darker text-amber-300' : 'border-transparent text-gray-500 hover:text-amber-200'}`}>{label}</button>)}</nav>{content}</div>;
 }
