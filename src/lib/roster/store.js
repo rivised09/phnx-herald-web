@@ -550,6 +550,60 @@ function upTo(byDate, iso) {
 }
 
 /**
+ * What "Gathered Resources" gained since the previous capture, per resource.
+ *
+ * The section itself stores a running total - each day's haul is added to the
+ * one before it - so plotting it directly would only ever draw the
+ * accumulation and make every snapshot look better than the last. What the
+ * chart is asked for is the trend of gathering, so the totals are differenced
+ * against the previous captured date first, oldest second, and the first
+ * capture drops out because it has nothing to be measured against.
+ *
+ * A value the source printed as text still parses, and a point where none of
+ * the five could be differenced is dropped rather than drawn as a dip to zero.
+ */
+const GATHERED_SERIES = [
+  ['mana', 'Mana Gathered'],
+  ['gems', 'Gems Gathered'],
+  ['wood', 'Wood Gathered'],
+  ['gold', 'Gold Gathered'],
+  ['ore', 'Ore Gathered'],
+];
+
+function metricNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const parsed = Number(value.replace(/[,\s]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function gatheredSeries(byDate) {
+  const totals = Object.keys(byDate || {})
+    .sort()
+    .map((date) => {
+      const day = byDate[date] || {};
+      const point = { date };
+      for (const [key, label] of GATHERED_SERIES) {
+        point[key] = metricNumber(day[label]);
+      }
+      return point;
+    });
+
+  return totals
+    .slice(1)
+    .map((point, index) => {
+      const previous = totals[index];
+      const gain = { date: point.date };
+      for (const [key] of GATHERED_SERIES) {
+        gain[key] =
+          point[key] !== null && previous[key] !== null ? point[key] - previous[key] : null;
+      }
+      return gain;
+    })
+    .filter((gain) => GATHERED_SERIES.some(([key]) => gain[key] !== null));
+}
+
+/**
  * A player's profile at one point in time.
  *
  * `date` selects the snapshot to read; unset means the newest one, which is
@@ -671,6 +725,7 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     requestedDate: requested,
     isLatest: wanted === snapshotDates[0],
     history,
+    gathered: gatheredSeries(metricsByDate),
     previousNames: nameHistory
       .map((item) => item.name)
       .filter((name) => name !== row.lord.name),
