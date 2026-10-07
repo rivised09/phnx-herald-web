@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import PlayerRadar from './PlayerRadar';
 import PlayerStatsChart from './PlayerStatsChart';
+import GatheredResourcesChart from './GatheredResourcesChart';
 
 const LEVEL_STROKE = {
   strong: 'stroke-amber-400',
@@ -138,7 +139,7 @@ function blocksFor(tab, sections) {
   return [...known, ...unknown];
 }
 
-function StatBlocks({ tab, sections, date, exclude = [] }) {
+function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
   const blocks = blocksFor(tab, sections).filter((block) => !exclude.includes(block.section));
   if (!blocks.length) return null;
   return (
@@ -149,6 +150,9 @@ function StatBlocks({ tab, sections, date, exclude = [] }) {
       <div className="space-y-5">
         {blocks.map((block) => (
           <div key={block.section || 'profile'}>
+            {/* A chart that belongs to one block sits directly above it, so
+                the gathered resources read as trend first, rows second. */}
+            {charts?.[block.section] || null}
             <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
               {SECTION_TITLE[block.section] || block.section}
             </h3>
@@ -527,6 +531,7 @@ export default function PlayerInsights({
   insights,
   achievements = [],
   history = [],
+  gathered = [],
   radar = null,
   sections = [],
   sectionsDate = null,
@@ -728,7 +733,18 @@ export default function PlayerInsights({
 
       {tab === 'combat' || tab === 'farming' || tab === 'building' ? (
         <>
-          <StatBlocks tab={tab} sections={sections} date={sectionsDate} />
+          <StatBlocks
+            tab={tab}
+            sections={sections}
+            date={sectionsDate}
+            charts={
+              tab === 'farming'
+                ? {
+                    'Gathered Resources': <GatheredResourcesChart points={gathered} />,
+                  }
+                : null
+            }
+          />
           <ProgressTable rows={categoryRows(tab).progress} hint={progressHint} />
           <EfficiencyGrid rows={categoryRows(tab).efficiency} />
           <ComparisonList rows={categoryRows(tab).periods} hint={comparison.narrative} />

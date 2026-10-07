@@ -207,6 +207,7 @@ export default function DetailView({ kind, data }) {
             insights={data.insights}
             achievements={data.achievements}
             history={data.history}
+            gathered={data.gathered}
             radar={data.insights?.radar}
             sections={data.sections}
             sectionsDate={data.sectionsDate}
