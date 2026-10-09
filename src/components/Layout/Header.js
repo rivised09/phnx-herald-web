@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Flame, Menu, Users, X } from 'lucide-react';
+import { BookOpen, Flame, Menu, Users, X } from 'lucide-react';
 
 const DISCORD_INVITE = 'https://discord.gg/kwAc6xpgGa';
+const GUIDES_URL = 'https://phw-973-two.vercel.app/';
 
 function DiscordIcon({ className }) {
   return (
@@ -104,15 +105,30 @@ export default function Header() {
           )}
 
           {isPublicHome && (
-            <a
-              href={DISCORD_INVITE}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#5865F2]/40 bg-[#5865F2]/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#c7ccff] transition hover:-translate-y-px hover:border-[#5865F2]/70 hover:bg-[#5865F2]/20 hover:text-white sm:gap-2 sm:px-3 sm:text-[11px] sm:tracking-[0.18em]"
-            >
-              <DiscordIcon className="h-3.5 w-3.5 shrink-0" />
-              Join Discord
-            </a>
+            <>
+              <a
+                href={GUIDES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Guides"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-800 bg-gray-500/5 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400 transition hover:-translate-y-px hover:border-gray-600 hover:bg-gray-500/10 hover:text-neutral-100 sm:gap-2 sm:px-3 sm:text-[11px] sm:tracking-[0.18em]"
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                {/* Labels collapse on phones so the header keeps two icon
+                    buttons instead of two full pills. */}
+                <span className="hidden sm:inline">Guides</span>
+              </a>
+              <a
+                href={DISCORD_INVITE}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Join Discord"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#5865F2]/40 bg-[#5865F2]/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#c7ccff] transition hover:-translate-y-px hover:border-[#5865F2]/70 hover:bg-[#5865F2]/20 hover:text-white sm:gap-2 sm:px-3 sm:text-[11px] sm:tracking-[0.18em]"
+              >
+                <DiscordIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Join Discord</span>
+              </a>
+            </>
           )}
         </div>
       </div>
