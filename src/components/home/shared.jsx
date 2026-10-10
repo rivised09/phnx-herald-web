@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { useT } from '../i18n/LocaleProvider';
 
 const TONES = {
   neutral: 'border-gray-800 bg-discord-surface text-gray-400',
@@ -20,11 +21,12 @@ export function Notice({ tone = 'neutral', icon: Icon, title, children }) {
   );
 }
 
-export function Loading({ label = 'Loading roster' }) {
+export function Loading({ label }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-center gap-2 py-20 font-mono text-[10px] uppercase tracking-[0.25em] text-gray-600">
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      {label}
+      {label ?? t('home.loading')}
     </div>
   );
 }
@@ -34,10 +36,11 @@ export function Loading({ label = 'Loading roster' }) {
  * one category can report both counts at once.
  */
 export function RosterFooter({ count, onRetry, source, label }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-between gap-3 pt-1">
       <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-        {label || `${count} ${count === 1 ? 'player' : 'players'}`}
+        {label || `${count} ${t(count === 1 ? 'home.playerOne' : 'home.playerMany')}`}
         {source ? ` · ${source}` : ''}
       </span>
       {onRetry && (
@@ -47,7 +50,7 @@ export function RosterFooter({ count, onRetry, source, label }) {
           className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-800 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-100"
         >
           <RefreshCw className="h-3 w-3" />
-          Refresh
+          {t('home.refresh')}
         </button>
       )}
     </div>
@@ -55,8 +58,9 @@ export function RosterFooter({ count, onRetry, source, label }) {
 }
 
 export function ErrorNotice({ error }) {
+  const t = useT();
   return (
-    <Notice icon={AlertTriangle} title="Could not load the roster">
+    <Notice icon={AlertTriangle} title={t('home.loadFailed')}>
       {error}
     </Notice>
   );

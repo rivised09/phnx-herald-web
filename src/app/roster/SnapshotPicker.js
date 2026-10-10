@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { History, Loader2 } from 'lucide-react';
+import { useT } from '../../components/i18n/LocaleProvider';
 
 /**
  * Which stored snapshot the profile is reading. The newest one is the default,
@@ -18,6 +19,7 @@ import { History, Loader2 } from 'lucide-react';
  */
 export default function SnapshotPicker({ id, dates = [], active, isLatest = true }) {
   const router = useRouter();
+  const t = useT();
   const latest = dates[0];
   const [selected, setSelected] = useState(active || latest);
   const [isPending, startTransition] = useTransition();
@@ -39,10 +41,10 @@ export default function SnapshotPicker({ id, dates = [], active, isLatest = true
           ) : (
             <History className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           )}
-          {isPending ? 'Loading' : 'Snapshot'}
+          {isPending ? t('roster.loading') : t('roster.snapshot')}
         </span>
         <select
-          aria-label="Snapshot date"
+          aria-label={t('roster.snapshotDateAria')}
           aria-busy={isPending}
           value={selected || active || latest}
           onChange={(event) => {
@@ -58,7 +60,7 @@ export default function SnapshotPicker({ id, dates = [], active, isLatest = true
         >
           {dates.map((date) => (
             <option key={date} value={date}>
-              {date === latest ? `Latest · ${date}` : date}
+              {date === latest ? t('roster.latest', { date }) : date}
             </option>
           ))}
         </select>
@@ -66,7 +68,7 @@ export default function SnapshotPicker({ id, dates = [], active, isLatest = true
 
       {!isLatest && (
         <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-amber-200">
-          {`Archived · latest is ${latest}`}
+          {t('roster.archived', { latest })}
         </span>
       )}
     </div>

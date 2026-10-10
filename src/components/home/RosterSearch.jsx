@@ -28,8 +28,23 @@ const KINDS = {
  * `loading` is for the pages that read their roster as the box is used: while
  * the list has not arrived yet the box says so instead of reporting a term
  * that has not been searched for.
+ *
+ * Label props default to English so the dashboard's player-info page needs no
+ * changes; the home page passes translated ones.
  */
-export default function RosterSearch({ value, onChange, suggestions = [], loading = false }) {
+export default function RosterSearch({
+  value,
+  onChange,
+  suggestions = [],
+  loading = false,
+  label = 'Search alliances and lords',
+  placeholder = 'Search alliances and lords…',
+  clearLabel = 'Clear search',
+  listLabel = 'Roster suggestions',
+  loadingLabel = 'Loading roster…',
+  noMatchesLabel = null,
+  kindLabels = null,
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -97,7 +112,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
           aria-activedescendant={
             expanded && hasMatches ? `${listId}-${active}` : undefined
           }
-          aria-label="Search alliances and lords"
+          aria-label={label}
           value={value}
           onChange={(event) => {
             onChange(event.target.value);
@@ -105,7 +120,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search alliances and lords…"
+          placeholder={placeholder}
           className="w-full rounded-md border border-gray-800 bg-discord-bg-darker py-1.5 pl-8 pr-8 text-[13px] text-neutral-100 outline-none transition placeholder:text-gray-600 focus:border-gray-500"
         />
         {value && (
@@ -115,7 +130,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
               onChange('');
               close();
             }}
-            aria-label="Clear search"
+            aria-label={clearLabel}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer rounded p-1 text-gray-500 transition hover:bg-gray-500/10 hover:text-neutral-100"
           >
             <X className="h-3.5 w-3.5" />
@@ -127,7 +142,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
         <ul
           id={listId}
           role="listbox"
-          aria-label="Roster suggestions"
+          aria-label={listLabel}
           className="absolute left-0 right-0 top-full z-20 mt-1 max-h-80 overflow-auto rounded-md border border-gray-800 bg-discord-surface py-1 shadow-xl shadow-black/50"
         >
           {hasMatches ? (
@@ -151,7 +166,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
                     <span
                       className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] ${kind.chip}`}
                     >
-                      {kind.label}
+                      {kindLabels?.[item.kind] || kind.label}
                     </span>
                     <span className="min-w-0 truncate text-[13px] text-neutral-100">
                       {item.name}
@@ -172,7 +187,7 @@ export default function RosterSearch({ value, onChange, suggestions = [], loadin
             >
               {/* A page that is still reading the roster says so rather than
                   claiming there are no matches for a term nobody has judged. */}
-              {loading ? 'Loading roster…' : <>No matches for “{value.trim()}”</>}
+              {loading ? loadingLabel : noMatchesLabel ?? <>No matches for “{value.trim()}”</>}
             </li>
           )}
         </ul>

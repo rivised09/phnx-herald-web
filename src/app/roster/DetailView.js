@@ -1,6 +1,10 @@
+'use client';
+
 import Link from 'next/link';
 import { ArrowLeft, History, Shield } from 'lucide-react';
 import DetailSearch from '../../components/home/DetailSearch';
+import { useT } from '../../components/i18n/LocaleProvider';
+import { rowKeyFor } from '../../lib/i18n/labels';
 import Avatar from './Avatar';
 import MemberList from './MemberList';
 import PlayerInsights from './PlayerInsights';
@@ -35,6 +39,7 @@ function Chip({ label, value, accent = false }) {
 }
 
 export default function DetailView({ kind, data }) {
+  const t = useT();
   const player = kind === 'player';
   // The source's own Profile block: it reads like a caption for the account, so
   // it sits in the header rather than behind a tab.
@@ -48,7 +53,7 @@ export default function DetailView({ kind, data }) {
           className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500 transition hover:text-neutral-100"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to {player ? 'players' : 'alliances'}
+          {t(player ? 'roster.backPlayers' : 'roster.backAlliances')}
         </Link>
 
         {/* The home page's lookup box, kept on the far right of every roster
@@ -82,16 +87,19 @@ export default function DetailView({ kind, data }) {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                    Lord / Player
+                    {t('roster.kindPlayer')}
                   </p>
                   <h1 className="mt-1 truncate text-xl font-semibold text-neutral-100">
                     {data.name}
                   </h1>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Chip label="Rank" value={`#${data.rank ?? '—'}`} accent />
-                    <Chip label="Power" value={data.power || '—'} accent />
-                    <Chip label="Alliance" value={data.alliance?.name || 'Unaffiliated'} />
-                    <Chip label="Captured" value={data.snapshotDate} />
+                    <Chip label={t('stat.rank')} value={`#${data.rank ?? '—'}`} accent />
+                    <Chip label={t('stat.power')} value={data.power || '—'} accent />
+                    <Chip
+                      label={t('roster.alliance')}
+                      value={data.alliance?.name || t('roster.unaffiliated')}
+                    />
+                    <Chip label={t('roster.captured')} value={data.snapshotDate} />
                   </div>
                 </div>
               </div>
@@ -110,7 +118,7 @@ export default function DetailView({ kind, data }) {
               <Shield className="h-5 w-5 text-gray-400" />
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                  Alliance
+                  {t('roster.alliance')}
                 </p>
                 <h1 className="text-lg font-semibold text-neutral-100">{data.name}</h1>
               </div>
@@ -124,7 +132,7 @@ export default function DetailView({ kind, data }) {
               <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
               <div className="min-w-0">
                 <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-                  Previous names
+                  {t('roster.prevNames')}
                 </h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {data.previousNames.map((name) => (
@@ -147,7 +155,7 @@ export default function DetailView({ kind, data }) {
               <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
               <div className="min-w-0">
                 <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-                  Also on servers
+                  {t('roster.otherServers')}
                 </h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {data.otherServers.map((number) => (
@@ -168,14 +176,14 @@ export default function DetailView({ kind, data }) {
           <div className="border-b border-gray-800 px-4 py-4">
             <div className="mb-3">
               <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-400">
-                Source figures{data.sectionsDate ? ` · ${data.sectionsDate}` : ''}
+                {data.sectionsDate
+                  ? t('roster.sourceFiguresMeta', { date: data.sectionsDate })
+                  : t('roster.sourceFigures')}
               </h2>
-              <p className="mt-1 text-xs text-gray-400">
-                Recorded verbatim from the player&apos;s own page.
-              </p>
+              <p className="mt-1 text-xs text-gray-400">{t('roster.verbatim')}</p>
             </div>
             <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
-              Profile
+              {t('roster.profile')}
             </h3>
             <dl className="mt-2 grid gap-x-5 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
               {profile.rows.map((row) => (
@@ -183,7 +191,9 @@ export default function DetailView({ kind, data }) {
                   key={row.label}
                   className="flex items-baseline justify-between gap-3 border-b border-gray-800/70 pb-1.5"
                 >
-                  <dt className="truncate text-xs text-neutral-300">{row.label}</dt>
+                  <dt className="truncate text-xs text-neutral-300">
+                    {t(rowKeyFor(row.label) || '', undefined, row.label)}
+                  </dt>
                   <dd className="shrink-0 font-mono text-[11px] text-neutral-100">{row.value}</dd>
                 </div>
               ))}
@@ -194,10 +204,10 @@ export default function DetailView({ kind, data }) {
         {!player && (
           <StatGrid
             cells={[
-              ['Rank', data.rank || '—'],
-              ['Power', data.power || '—'],
-              ['Members', data.memberCount],
-              ['Snapshot', data.snapshotDate],
+              [t('stat.rank'), data.rank || '—'],
+              [t('stat.power'), data.power || '—'],
+              [t('roster.members'), data.memberCount],
+              [t('roster.snapshot'), data.snapshotDate],
             ]}
           />
         )}

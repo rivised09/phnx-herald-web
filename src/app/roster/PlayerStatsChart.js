@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useT } from '../../components/i18n/LocaleProvider';
 
 function number(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -19,6 +20,7 @@ function formatPower(value) {
 }
 
 export default function PlayerStatsChart({ history = [] }) {
+  const t = useT();
   const data = history
     .map((item) => ({
       ...item,
@@ -30,21 +32,26 @@ export default function PlayerStatsChart({ history = [] }) {
   if (data.length < 2) {
     return (
       <div className="border-t border-gray-800 px-4 py-4 text-xs text-gray-500">
-        Historical charts will appear after this player has been captured in at least two snapshots.
+        {t('chart.needTwo')}
       </div>
     );
   }
+
+  const powerName = t('stat.power');
+  const rankName = t('stat.rank');
 
   return (
     <div className="border-t border-gray-800 px-4 py-4">
       <div className="mb-3 flex items-end justify-between">
         <div>
           <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-            Player trends
+            {t('chart.trends')}
           </h2>
-          <p className="mt-1 text-xs text-gray-600">Power and leaderboard rank across verified snapshots</p>
+          <p className="mt-1 text-xs text-gray-600">{t('chart.trendsHint')}</p>
         </div>
-        <span className="font-mono text-[10px] text-gray-600">{data.length} snapshots</span>
+        <span className="font-mono text-[10px] text-gray-600">
+          {t(data.length === 1 ? 'chart.snapshotOne' : 'chart.snapshotMany', { n: data.length })}
+        </span>
       </div>
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -70,7 +77,7 @@ export default function PlayerStatsChart({ history = [] }) {
               contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', fontSize: 11 }}
               labelStyle={{ color: '#a1a1aa' }}
               formatter={(value, name) => [
-                name === 'Power' ? formatPower(value) : `#${value ?? '—'}`,
+                name === powerName ? formatPower(value) : `#${value ?? '—'}`,
                 name,
               ]}
             />
@@ -78,7 +85,7 @@ export default function PlayerStatsChart({ history = [] }) {
               yAxisId="power"
               type="monotone"
               dataKey="power"
-              name="Power"
+              name={powerName}
               stroke="#f59e0b"
               strokeWidth={2}
               dot={false}
@@ -88,7 +95,7 @@ export default function PlayerStatsChart({ history = [] }) {
               yAxisId="rank"
               type="monotone"
               dataKey="rank"
-              name="Rank"
+              name={rankName}
               stroke="#60a5fa"
               strokeWidth={2}
               dot={false}

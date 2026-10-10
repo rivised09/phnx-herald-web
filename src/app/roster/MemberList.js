@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Pagination from '../../components/home/Pagination';
+import { useT } from '../../components/i18n/LocaleProvider';
 
 const PER_PAGE = 10;
 
@@ -14,6 +15,7 @@ const PER_PAGE = 10;
  * the end.
  */
 export default function MemberList({ players = [] }) {
+  const t = useT();
   const [page, setPage] = useState(0);
 
   const total = players.length;
@@ -26,10 +28,10 @@ export default function MemberList({ players = [] }) {
     return (
       <div className="border-t border-gray-800">
         <div className="border-b border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-          Members · 0
+          {t('roster.membersCount', { n: 0 })}
         </div>
         <p className="px-4 py-6 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-          No members stored for this snapshot.
+          {t('roster.noMembers')}
         </p>
       </div>
     );
@@ -38,7 +40,7 @@ export default function MemberList({ players = [] }) {
   return (
     <div className="border-t border-gray-800">
       <div className="border-b border-gray-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-        Members · {total}
+        {t('roster.membersCount', { n: total })}
       </div>
 
       <div className="divide-y divide-gray-800/80">
@@ -65,6 +67,12 @@ export default function MemberList({ players = [] }) {
           end={start + slice.length}
           total={total}
           perPage={PER_PAGE}
+          summary={t('stats.topMeta', {
+            shown: `${start + 1}–${start + slice.length}`,
+            total,
+          })}
+          prevLabel={t('page.prev')}
+          nextLabel={t('page.next')}
         />
       </div>
     </div>

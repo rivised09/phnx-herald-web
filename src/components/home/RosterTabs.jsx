@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChartBar, Shield, Users } from 'lucide-react';
+import { useT } from '../i18n/LocaleProvider';
 
 const TAB_ICONS = {
   alliances: Shield,
@@ -21,6 +22,7 @@ const TAB_ICONS = {
 export default function RosterTabs({ tabs = [] }) {
   const [active, setActive] = useState(() => tabs[0]?.key);
   const current = tabs.find((tab) => tab.key === active) || tabs[0];
+  const t = useT();
 
   if (!current) return null;
 
@@ -28,7 +30,7 @@ export default function RosterTabs({ tabs = [] }) {
     <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
       <div
         role="tablist"
-        aria-label="Roster categories"
+        aria-label={t('tabs.aria')}
         className="grid grid-cols-3 gap-1.5 border-b border-gray-800 bg-gradient-to-b from-black/50 to-black/20 p-2 sm:flex sm:flex-wrap sm:items-center"
       >
         {tabs.map((tab) => {

@@ -1,4 +1,7 @@
+'use client';
+
 import { ArrowLeft, Shield } from 'lucide-react';
+import { useT } from '../../components/i18n/LocaleProvider';
 
 /**
  * The first paint of a roster detail page. The page itself has to wait for the
@@ -17,11 +20,12 @@ function Bar({ className = '' }) {
 }
 
 export function PlayerDetailSkeleton() {
+  const t = useT();
   return (
-    <div className="space-y-4" role="status" aria-label="Loading player profile">
+    <div className="space-y-4" role="status" aria-label={t('roster.loadingPlayerAria')}>
       <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        Loading player
+        {t('roster.loadingPlayer')}
       </span>
 
       <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
@@ -89,11 +93,12 @@ export function PlayerDetailSkeleton() {
 }
 
 export function AllianceDetailSkeleton() {
+  const t = useT();
   return (
-    <div className="space-y-4" role="status" aria-label="Loading alliance profile">
+    <div className="space-y-4" role="status" aria-label={t('roster.loadingAllianceAria')}>
       <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        Loading alliance
+        {t('roster.loadingAlliance')}
       </span>
 
       <div className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">

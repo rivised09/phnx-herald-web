@@ -8,6 +8,7 @@ import RosterTabs from './RosterTabs';
 import ServerStats from './ServerStats';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
 import { buildSuggestions } from './suggestions';
+import { useT } from '../i18n/LocaleProvider';
 
 const ICONS = {
   not_configured: Radio,
@@ -35,37 +36,37 @@ const ICONS = {
  * A source that has not been reached yet is presented as a state of the data
  * rather than a page-level failure, so the shell stays usable while the first
  * sync completes or while the bot is being set up.
+ *
+ * Every visible string is a dictionary key resolved through `t`; tone and
+ * icons stay structural so a translation never has to carry them.
  */
 const STATUS_COPY = {
   not_configured: {
-    title: 'Source not connected',
-    body: 'The CallofStats credentials are missing. Set CALLOFSTATS_USERNAME and CALLOFSTATS_PASSWORD on the bot.',
+    title: 'home.notConfigured.title',
+    body: 'home.notConfigured.body',
   },
-  fetch_failed: { title: 'Could not reach the source' },
-  parse_empty: { title: 'No rows recognised' },
+  fetch_failed: { title: 'home.fetchFailed.title' },
+  parse_empty: { title: 'home.parseEmpty.title' },
   auth_failed: {
-    title: 'CallofStats rejected the credentials',
+    title: 'home.authFailed.title',
     tone: 'error',
   },
   auth_expired: {
-    title: 'CallofStats session expired',
+    title: 'home.authExpired.title',
     tone: 'error',
   },
   awaiting_sync: {
-    title: 'First sync in progress',
-    body: 'This page reads from our own database, and no snapshot has been ingested yet. The background sync fills it in within a few minutes.',
+    title: 'home.awaitingSync.title',
+    body: 'home.awaitingSync.body',
   },
-  unavailable: { title: 'Roster service unavailable', tone: 'error' },
+  unavailable: { title: 'home.unavailable.title', tone: 'error' },
 };
-
-function plural(count, word) {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
-}
 
 export default function Home({ data, loading, error, onRetry }) {
   // Hooks come first: the loading and error paths below return early, and a
   // hook declared after them would run on some renders and not others.
   const [query, setQuery] = useState('');
+  const t = useT();
 
   const alliances = data?.alliances || [];
   const players = data?.players || [];
@@ -80,6 +81,11 @@ export default function Home({ data, loading, error, onRetry }) {
   const status = data?.status;
   const copy = STATUS_COPY[status];
   const total = alliances.length + players.length;
+  const stale = data.snapshot?.staleDays > 2;
+
+  // Counts are pre-formatted here so the message can order them per language.
+  const alliancesWord = t(alliances.length === 1 ? 'home.allianceOne' : 'home.allianceMany');
+  const playersWord = t(players.length === 1 ? 'home.playerOne' : 'home.playerMany');
 
   return (
     <div className="space-y-6">
@@ -87,9 +93,9 @@ export default function Home({ data, loading, error, onRetry }) {
         <Notice
           tone={copy.tone || 'neutral'}
           icon={ICONS[status] || Radio}
-          title={copy.title}
+          title={t(copy.title)}
         >
-          {data.detail || copy.body}
+          {data.detail || (copy.body ? t(copy.body) : null)}
         </Notice>
       )}
 
@@ -99,29 +105,38 @@ export default function Home({ data, loading, error, onRetry }) {
         <Notice
           tone="warn"
           icon={AlertTriangle}
-          title={data.snapshot?.staleDays > 2 ? 'Last verified data' : 'Sync note'}
+          title={stale ? t('home.stale.title') : t('home.syncNote.title')}
         >
-          {data.snapshot?.staleDays > 2
-            ? `The latest verified database snapshot is ${data.snapshot.date}. A new source sync is required before showing current data.`
-            : data.detail}
+          {stale ? t('home.stale.body', { date: data.snapshot.date }) : data.detail}
         </Notice>
       )}
 
       {status === 'ok' && total === 0 && (
-        <Notice icon={Radio} title="No rows yet">
-          The stored snapshot has no alliances and no players.
+        <Notice icon={Radio} title={t('home.noRows.title')}>
+          {t('home.noRows.body')}
         </Notice>
       )}
 
       {status === 'ok' && total > 0 && (
         <div className="space-y-2">
-          <RosterSearch value={query} onChange={setQuery} suggestions={suggestions} />
+          <RosterSearch
+            value={query}
+            onChange={setQuery}
+            suggestions={suggestions}
+            label={t('search.label')}
+            placeholder={t('search.placeholder')}
+            clearLabel={t('search.clear')}
+            listLabel={t('search.list')}
+            loadingLabel={t('search.loading')}
+            noMatchesLabel={t('search.noMatches', { q: query.trim() })}
+            kindLabels={{ alliance: t('search.kindAlliance'), lord: t('search.kindLord') }}
+          />
 
           <RosterTabs
             tabs={[
               {
                 key: 'alliances',
-                label: 'Alliances',
+                label: t('home.tabAlliances'),
                 count: alliances.length,
                 panel: (
                   <RosterSection
@@ -131,7 +146,7 @@ export default function Home({ data, loading, error, onRetry }) {
                     items={alliances}
                     perPage={10}
                     itemType="alliance"
-                    emptyLabel="No alliances found on this server."
+                    emptyLabel={t('home.emptyAlliances')}
                     showHeader={false}
                     framed={false}
                   />
@@ -139,15 +154,15 @@ export default function Home({ data, loading, error, onRetry }) {
               },
               {
                 key: 'players',
-                label: 'Lords / Players',
-                shortLabel: 'Lords',
+                label: t('home.tabPlayers'),
+                shortLabel: t('home.tabPlayersShort'),
                 count: players.length,
                 panel: (
                   <RosterSection
                     key="players"
                     items={players}
                     perPage={10}
-                    emptyLabel="No players found for these alliances."
+                    emptyLabel={t('home.emptyPlayers')}
                     showHeader={false}
                     framed={false}
                   />
@@ -157,8 +172,8 @@ export default function Home({ data, loading, error, onRetry }) {
                 // The same rows read as a server: totals, the two leaderboards
                 // and how power is spread, without another request.
                 key: 'stats',
-                label: 'Server stats',
-                shortLabel: 'Stats',
+                label: t('home.tabStats'),
+                shortLabel: t('home.tabStatsShort'),
                 count: total,
                 panel: (
                   <ServerStats
@@ -176,9 +191,12 @@ export default function Home({ data, loading, error, onRetry }) {
 
       <RosterFooter
         count={total}
-        label={`${plural(alliances.length, 'alliance')} · ${plural(players.length, 'player')}`}
+        label={t('home.counts', {
+          alliances: `${alliances.length} ${alliancesWord}`,
+          players: `${players.length} ${playersWord}`,
+        })}
         onRetry={onRetry}
-        source={`database${data.snapshot?.date ? ` · ${data.snapshot.date}` : ''}`}
+        source={`${t('home.source')}${data.snapshot?.date ? ` · ${data.snapshot.date}` : ''}`}
       />
     </div>
   );

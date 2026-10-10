@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useT } from '../../components/i18n/LocaleProvider';
 
 /**
  * One line per resource, all five in the same frame, each point a gain since
@@ -18,11 +19,11 @@ import {
  * rather than as a resource that moves in small numbers.
  */
 const SERIES = [
-  { key: 'mana', label: 'Mana', color: '#3b82f6', axis: 'main' },
-  { key: 'gems', label: 'Gems', color: '#ef4444', axis: 'gems' },
-  { key: 'wood', label: 'Wood', color: '#f97316', axis: 'main' },
-  { key: 'gold', label: 'Gold', color: '#eab308', axis: 'main' },
-  { key: 'ore', label: 'Ore', color: '#a1a1aa', axis: 'main' },
+  { key: 'mana', color: '#3b82f6', axis: 'main' },
+  { key: 'gems', color: '#ef4444', axis: 'gems' },
+  { key: 'wood', color: '#f97316', axis: 'main' },
+  { key: 'gold', color: '#eab308', axis: 'main' },
+  { key: 'ore', color: '#a1a1aa', axis: 'main' },
 ];
 
 function number(value) {
@@ -44,6 +45,7 @@ function exact(value) {
 }
 
 export default function GatheredResourcesChart({ points = [] }) {
+  const t = useT();
   const data = (points || [])
     .map((point) => ({
       date: point?.date || null,
@@ -52,12 +54,7 @@ export default function GatheredResourcesChart({ points = [] }) {
     .filter((point) => point.date && SERIES.some((item) => point[item.key] !== null));
 
   if (data.length < 2) {
-    return (
-      <p className="mb-5 text-xs text-gray-600">
-        The gathered-resources trend appears after this player has been captured in at least three
-        snapshots.
-      </p>
-    );
+    return <p className="mb-5 text-xs text-gray-600">{t('chart.needThree')}</p>;
   }
 
   const latest = data[data.length - 1];
@@ -67,15 +64,12 @@ export default function GatheredResourcesChart({ points = [] }) {
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
-            Gathered trend
+            {t('chart.gatheredTrend')}
           </h3>
-          <p className="mt-1 text-xs text-gray-600">
-            Gained since the previous capture, not the running total · mana, wood, gold and ore on
-            the left axis, gems on the right
-          </p>
+          <p className="mt-1 text-xs text-gray-600">{t('chart.gatheredHint')}</p>
         </div>
         <span className="shrink-0 font-mono text-[10px] text-gray-600">
-          {data.length} snapshots
+          {t(data.length === 1 ? 'chart.snapshotOne' : 'chart.snapshotMany', { n: data.length })}
         </span>
       </div>
 
@@ -118,7 +112,7 @@ export default function GatheredResourcesChart({ points = [] }) {
                 yAxisId={item.axis}
                 type="monotone"
                 dataKey={item.key}
-                name={item.label}
+                name={t(`chart.${item.key}`)}
                 stroke={item.color}
                 strokeWidth={2}
                 dot={{ r: 2, strokeWidth: 0 }}
@@ -139,7 +133,7 @@ export default function GatheredResourcesChart({ points = [] }) {
               style={{ backgroundColor: item.color }}
             />
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-500">
-              {item.label}
+              {t(`chart.${item.key}`)}
             </span>
             <span className="font-mono text-[11px] tabular-nums text-neutral-200">
               {exact(latest[item.key])}
