@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Pagination from './Pagination';
-import PlayerRoster from './PlayerRoster';
+import PlayerRoster, { humanize } from './PlayerRoster';
+import { useT } from '../i18n/LocaleProvider';
 
 /**
  * A titled category on the home page (Alliances, Players, ...) that shows a
@@ -27,6 +28,7 @@ export default function RosterSection({
   framed = true,
 }) {
   const [page, setPage] = useState(0);
+  const t = useT();
 
   const total = items.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
@@ -60,7 +62,15 @@ export default function RosterSection({
             : undefined
         }
       >
-        <PlayerRoster players={slice} bare itemType={itemType} />
+        <PlayerRoster
+          players={slice}
+          bare
+          itemType={itemType}
+          noStatsLabel={t('roster.noStats')}
+          // Known stat keys are translated; anything new falls back to the
+          // humanized source key, which stays readable English.
+          statLabel={(key) => t(`stat.${String(key).toLowerCase()}`, undefined, '') || humanize(key)}
+        />
         <div className="border-t border-gray-800">
           <Pagination
             page={current}
@@ -70,6 +80,14 @@ export default function RosterSection({
             end={start + slice.length}
             total={total}
             perPage={perPage}
+            summary={t('page.summary', {
+              start: start + 1,
+              end: start + slice.length,
+              total,
+              perPage,
+            })}
+            prevLabel={t('page.prev')}
+            nextLabel={t('page.next')}
           />
         </div>
       </div>

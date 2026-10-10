@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { BookOpen, Flame, Menu, Users, X } from 'lucide-react';
+import LanguageButton from '../i18n/LanguageButton';
+import Onboarding from '../i18n/Onboarding';
+import { useT } from '../i18n/LocaleProvider';
 
 const DISCORD_INVITE = 'https://discord.gg/kwAc6xpgGa';
 const GUIDES_URL = 'https://phw-973-two.vercel.app/';
@@ -19,6 +22,7 @@ function DiscordIcon({ className }) {
 export default function Header() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const t = useT();
 
   // The home page is public, so leadership-only destinations are not offered
   // there. They are all access-code protected and would bounce to
@@ -31,7 +35,12 @@ export default function Header() {
   }, [pathname]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-800 bg-neutral-950/85 backdrop-blur">
+    <>
+      {/* The first-visit language prompt belongs to the public pages; it is
+          mounted here so a visitor landing straight on a roster profile can
+          pick a language too. */}
+      {isPublicHome && <Onboarding />}
+      <header className="sticky top-0 z-40 border-b border-gray-800 bg-neutral-950/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
         <Link href={isPublicHome ? '/' : '/dashboard'} className="group flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-700 bg-gray-100 text-neutral-950 transition group-hover:-translate-y-px">
@@ -39,10 +48,10 @@ export default function Header() {
           </div>
           <div className="leading-tight">
             <div className="text-[15px] font-semibold tracking-tight text-neutral-100">
-              {isPublicHome ? 'Phoenix of War' : 'Phoenix Herald'}
+              {isPublicHome ? t('nav.brand') : 'Phoenix Herald'}
             </div>
             <div className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500 sm:block">
-              {isPublicHome ? 'Server 973' : 'Manage / Events'}
+              {isPublicHome ? t('nav.server') : 'Manage / Events'}
             </div>
           </div>
         </Link>
@@ -106,6 +115,7 @@ export default function Header() {
 
           {isPublicHome && (
             <>
+              <LanguageButton />
               <a
                 href={GUIDES_URL}
                 target="_blank"
@@ -158,6 +168,7 @@ export default function Header() {
           ))}
         </nav>
       ) : null}
-    </header>
+      </header>
+    </>
   );
 }

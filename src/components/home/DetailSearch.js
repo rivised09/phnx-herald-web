@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import RosterSearch from './RosterSearch';
 import { buildSuggestions } from './suggestions';
+import { useT } from '../i18n/LocaleProvider';
 
 /**
  * The home page's lookup box, offered on the roster detail pages as well.
@@ -13,6 +14,7 @@ import { buildSuggestions } from './suggestions';
  * read lands the box simply has nothing to suggest rather than a wrong answer.
  */
 export default function DetailSearch() {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [roster, setRoster] = useState(null);
 
@@ -42,6 +44,13 @@ export default function DetailSearch() {
       onChange={setQuery}
       suggestions={suggestions}
       loading={roster === null}
+      label={t('search.label')}
+      placeholder={t('search.placeholder')}
+      clearLabel={t('search.clear')}
+      listLabel={t('search.list')}
+      loadingLabel={t('search.loading')}
+      noMatchesLabel={t('search.noMatches', { q: query.trim() })}
+      kindLabels={{ alliance: t('search.kindAlliance'), lord: t('search.kindLord') }}
     />
   );
 }

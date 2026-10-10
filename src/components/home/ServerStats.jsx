@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useT } from '../i18n/LocaleProvider';
 
 /**
  * The third home tab: the snapshot read as a server rather than as two lists.
@@ -11,15 +12,18 @@ import Link from 'next/link';
  * only colour in it is the accent, and only where it carries information: the
  * three leading ranks, the bar that encodes share, and the distribution's own
  * segments. Everything else is type, rules and alignment.
+ *
+ * All labels come from the language dictionary through `t`; band thresholds
+ * are structural and never change between languages.
  */
 
 const BANDS = [
-  { key: 'tiny', label: 'Under 10M', fill: 'bg-gray-700', test: (n) => n > 0 && n < 1e7 },
-  { key: 'low', label: '10M – 30M', fill: 'bg-amber-600/25', test: (n) => n >= 1e7 && n < 3e7 },
-  { key: 'mid', label: '30M – 50M', fill: 'bg-amber-600/45', test: (n) => n >= 3e7 && n < 5e7 },
-  { key: 'high', label: '50M – 80M', fill: 'bg-amber-500/55', test: (n) => n >= 5e7 && n < 8e7 },
-  { key: 'top', label: '80M – 100M', fill: 'bg-amber-500/75', test: (n) => n >= 8e7 && n < 1e8 },
-  { key: 'cap', label: '100M and above', fill: 'bg-amber-400', test: (n) => n >= 1e8 },
+  { key: 'tiny', labelKey: 'stats.bandUnder', fill: 'bg-gray-700', test: (n) => n > 0 && n < 1e7 },
+  { key: 'low', labelKey: 'stats.band10to30', fill: 'bg-amber-600/25', test: (n) => n >= 1e7 && n < 3e7 },
+  { key: 'mid', labelKey: 'stats.band30to50', fill: 'bg-amber-600/45', test: (n) => n >= 3e7 && n < 5e7 },
+  { key: 'high', labelKey: 'stats.band50to80', fill: 'bg-amber-500/55', test: (n) => n >= 5e7 && n < 8e7 },
+  { key: 'top', labelKey: 'stats.band80to100', fill: 'bg-amber-500/75', test: (n) => n >= 8e7 && n < 1e8 },
+  { key: 'cap', labelKey: 'stats.bandOver', fill: 'bg-amber-400', test: (n) => n >= 1e8 },
 ];
 
 /** Powers arrive as display strings ("3,107,409,746"); strip the separators. */
@@ -131,6 +135,8 @@ function RankedList({ title, meta, rows, max, href, columns, empty }) {
 }
 
 export default function ServerStats({ alliances = [], players = [], snapshot = null }) {
+  const t = useT();
+
   const allianceRows = alliances
     .map((item) => ({
       id: item.id,
@@ -162,6 +168,7 @@ export default function ServerStats({ alliances = [], players = [], snapshot = n
 
   const bands = BANDS.map((band) => ({
     ...band,
+    label: t(band.labelKey),
     count: lordRows.filter((row) => band.test(row.value)).length,
   }));
   const known = bands.reduce((sum, band) => sum + band.count, 0) || 1;
@@ -172,37 +179,42 @@ export default function ServerStats({ alliances = [], players = [], snapshot = n
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-gray-800 pb-2">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.22em] text-gray-400">
-            Server snapshot
+            {t('stats.snapshot')}
           </h3>
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-600">
-            {snapshot?.date ? `Snapshot · ${snapshot.date}` : 'Snapshot · unknown'}
+            {snapshot?.date
+              ? t('stats.snapshotMeta', { date: snapshot.date })
+              : t('stats.snapshotUnknown')}
           </span>
         </div>
 
         <div className="grid gap-4 pt-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] sm:items-end sm:gap-6">
           <div className="min-w-0">
             <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-gray-600">
-              Total lord power
+              {t('stats.totalPower')}
             </p>
             <p className="mt-1 font-mono text-3xl tabular-nums leading-none tracking-tight text-neutral-50 sm:text-4xl">
               {fmt(totalPower)}
             </p>
             <p className="mt-1.5 text-[11px] text-gray-600">
-              {`${fmt(alliances.length)} alliances and ${fmt(players.length)} lords in this snapshot`}
+              {t('stats.totalNote', {
+                alliances: fmt(alliances.length),
+                lords: fmt(players.length),
+              })}
             </p>
           </div>
 
           <dl className="grid grid-cols-3 divide-x divide-gray-800 border-t border-gray-800 pt-3 sm:border-t-0 sm:pt-0">
-            <Figure label="Average" value={compact(average)} note="per lord" />
+            <Figure label={t('stats.average')} value={compact(average)} note={t('stats.perLord')} />
             <Figure
-              label="Strongest lord"
+              label={t('stats.strongestLord')}
               value={topLords[0] ? compact(topLords[0].value) : '—'}
-              note={topLords[0]?.name || 'No data'}
+              note={topLords[0]?.name || t('stats.noData')}
             />
             <Figure
-              label="Strongest alliance"
+              label={t('stats.strongestAlliance')}
               value={topAlliances[0] ? compact(topAlliances[0].value) : '—'}
-              note={topAlliances[0]?.name || 'No data'}
+              note={topAlliances[0]?.name || t('stats.noData')}
             />
           </dl>
         </div>
@@ -211,8 +223,8 @@ export default function ServerStats({ alliances = [], players = [], snapshot = n
       {/* Distribution: one bar carries the shape, the legend carries the counts. */}
       <section>
         <SectionHead
-          title="Power distribution"
-          meta={`${fmt(lordRows.length)} lords measured`}
+          title={t('stats.distribution')}
+          meta={t('stats.lordsMeasured', { n: fmt(lordRows.length) })}
         />
         <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-800">
           {bands.map((band) => (
@@ -246,22 +258,22 @@ export default function ServerStats({ alliances = [], players = [], snapshot = n
 
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
         <RankedList
-          title="Top alliances"
-          meta={`${topAlliances.length} of ${allianceRows.length}`}
+          title={t('stats.topAlliances')}
+          meta={t('stats.topMeta', { shown: topAlliances.length, total: allianceRows.length })}
           rows={topAlliances}
           max={maxAlliance}
           href="/roster/alliance"
           columns={{ members: true }}
-          empty="No alliance power stored yet."
+          empty={t('stats.emptyAlliances')}
         />
         <RankedList
-          title="Top lords"
-          meta={`${topLords.length} of ${lordRows.length}`}
+          title={t('stats.topLords')}
+          meta={t('stats.topMeta', { shown: topLords.length, total: lordRows.length })}
           rows={topLords}
           max={maxLord}
           href="/roster/player"
           columns={{}}
-          empty="No lord power stored yet."
+          empty={t('stats.emptyLords')}
         />
       </div>
     </div>

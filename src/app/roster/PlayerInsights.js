@@ -21,6 +21,39 @@ import {
 import PlayerRadar from './PlayerRadar';
 import PlayerStatsChart from './PlayerStatsChart';
 import GatheredResourcesChart from './GatheredResourcesChart';
+import { useT } from '../../components/i18n/LocaleProvider';
+import {
+  SECTION_KEYS,
+  SIGNAL_KEYS,
+  GROUP_KEYS,
+  rowKeyFor,
+  achievementKeyFor,
+  itemKeyFor,
+} from '../../lib/i18n/labels';
+
+/** The bot's growth-reason template wants a signed compact delta. */
+function signedCompact(from, to) {
+  const delta = (to || 0) - (from || 0);
+  if (!Number.isFinite(delta) || delta === 0) return '0';
+  return `${delta > 0 ? '+' : '-'}${compact(Math.abs(delta))}`;
+}
+
+/** Shorten big numbers the way the bot's own narrative does (20K, 2.1M). */
+function compact(value) {
+  if (!Number.isFinite(value)) return '—';
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return `${(value / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
+  if (abs >= 1e6) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (abs >= 1e3) return `${(value / 1e3).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(Math.round(value));
+}
+
+/**
+ * A season-reset note ships pre-composed from the bot. When its template is
+ * recognised the dates are pulled back out and the sentence itself is looked
+ * up, so the wording follows the locale while the dates stay verbatim.
+ */
+const SEASON_NOTE = /^A new season opened between (.+) and (.+), so this counter restarted\.$/;
 
 const LEVEL_STROKE = {
   strong: 'stroke-amber-400',
@@ -86,11 +119,11 @@ const CATEGORY = {
 };
 
 const TABS = [
-  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'combat', label: 'Fighting', icon: Swords },
-  { key: 'farming', label: 'Farming', icon: Wheat },
-  { key: 'building', label: 'Building', icon: Building2 },
-  { key: 'records', label: 'Records', icon: Trophy },
+  { key: 'overview', labelKey: 'ins.tabOverview', icon: LayoutDashboard },
+  { key: 'combat', labelKey: 'ins.tabCombat', icon: Swords },
+  { key: 'farming', labelKey: 'ins.tabFarming', icon: Wheat },
+  { key: 'building', labelKey: 'ins.tabBuilding', icon: Building2 },
+  { key: 'records', labelKey: 'ins.tabRecords', icon: Trophy },
 ];
 
 /**
@@ -123,8 +156,6 @@ const SECTION_TAB = new Map(
   Object.entries(SECTION_ORDER).flatMap(([tab, names]) => names.map((name) => [name, tab])),
 );
 
-const SECTION_TITLE = { '': 'Profile' };
-
 function blocksFor(tab, sections) {
   const known = [];
   const unknown = [];
@@ -140,12 +171,13 @@ function blocksFor(tab, sections) {
 }
 
 function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
+  const t = useT();
   const blocks = blocksFor(tab, sections).filter((block) => !exclude.includes(block.section));
   if (!blocks.length) return null;
   return (
     <Section
-      title={date ? `Source figures · ${date}` : 'Source figures'}
-      hint="Recorded verbatim from the player's own page."
+      title={date ? t('roster.sourceFiguresMeta', { date }) : t('roster.sourceFigures')}
+      hint={t('roster.verbatim')}
     >
       <div className="space-y-5">
         {blocks.map((block) => (
@@ -154,7 +186,9 @@ function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
                 the gathered resources read as trend first, rows second. */}
             {charts?.[block.section] || null}
             <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
-              {SECTION_TITLE[block.section] || block.section}
+              {!block.section
+                ? t('roster.profile')
+                : t(SECTION_KEYS[block.section] || '', undefined, block.section)}
             </h3>
             <dl className="mt-2 grid gap-x-5 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
               {block.rows.map((row) => (
@@ -162,7 +196,9 @@ function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
                   key={row.label}
                   className="flex items-baseline justify-between gap-3 border-b border-gray-800/70 pb-1.5"
                 >
-                  <dt className="truncate text-xs text-neutral-300">{row.label}</dt>
+                  <dt className="truncate text-xs text-neutral-300">
+                    {t(rowKeyFor(row.label) || '', undefined, row.label)}
+                  </dt>
                   <dd className="shrink-0 font-mono text-[11px] text-neutral-100">{row.value}</dd>
                 </div>
               ))}
@@ -175,6 +211,7 @@ function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
 }
 
 function WarStats({ sections }) {
+  const t = useT();
   const section = sections.find((item) => item.section === 'War Stats');
   if (!section) return null;
   const icons = {
@@ -188,14 +225,16 @@ function WarStats({ sections }) {
   const rows = section.rows.filter((row) => icons[row.label]);
   if (!rows.length) return null;
   return (
-    <Section title="War Stats">
+    <Section title={t('ins.warStats')}>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-3">
         {rows.map((row) => {
           const Icon = icons[row.label];
           return (
             <div key={row.label} className="bg-discord-bg-darker px-3 py-3">
               <Icon className="h-7 w-7 text-white" strokeWidth={1.7} />
-              <p className="mt-2 text-xs text-gray-400">{row.label}</p>
+              <p className="mt-2 text-xs text-gray-400">
+                {t(rowKeyFor(row.label) || '', undefined, row.label)}
+              </p>
               <p className="mt-1 font-mono text-sm text-neutral-100">{row.value}</p>
             </div>
           );
@@ -206,6 +245,7 @@ function WarStats({ sections }) {
 }
 
 function MeritStats({ sections }) {
+  const t = useT();
   const section = sections.find((item) => item.section === 'Advanced War Stats');
   if (!section) return null;
   const wanted = [
@@ -223,12 +263,14 @@ function MeritStats({ sections }) {
     .filter((item) => item.value !== undefined);
   if (!stats.length) return null;
   return (
-    <Section title="Merits">
+    <Section title={t('ins.merits')}>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-4">
         {stats.map((stat) => (
           <div key={stat.label} className="bg-discord-bg-darker px-3 py-3">
             <img src={stat.icon} alt="" className="h-8 w-8 brightness-0 invert" />
-            <p className="mt-2 text-xs text-gray-400">{stat.label}</p>
+            <p className="mt-2 text-xs text-gray-400">
+              {t(rowKeyFor(stat.label) || '', undefined, stat.label)}
+            </p>
             <p className="mt-1 font-mono text-sm text-neutral-100">{stat.value}</p>
           </div>
         ))}
@@ -274,6 +316,7 @@ function Empty({ children }) {
  * read as a set rather than as five separate rows.
  */
 function ProfileRing({ signal }) {
+  const t = useT();
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const score = typeof signal.score === 'number' && Number.isFinite(signal.score) ? signal.score : 0;
@@ -313,20 +356,21 @@ function ProfileRing({ signal }) {
           <span
             className={`font-mono text-[9px] uppercase leading-tight tracking-[0.04em] sm:text-[11px] sm:tracking-[0.08em] ${LEVEL_TEXT[signal.level] || LEVEL_TEXT.unknown}`}
           >
-            {signal.level}
+            {t('lvl.' + signal.level, undefined, signal.level)}
           </span>
         </div>
       </div>
       <span className="mt-1.5 block break-words text-center font-mono text-[8px] uppercase leading-tight tracking-[0.06em] text-neutral-300 sm:mt-2 sm:text-[9px] sm:tracking-[0.1em]">
-        {signal.label}
+        {t(SIGNAL_KEYS[signal.key] || '', undefined, signal.label)}
       </span>
     </li>
   );
 }
 
 function Delta({ row }) {
+  const t = useT();
   if (row.direction === 'reset') {
-    return <span className="font-mono text-[11px] text-amber-300">new season</span>;
+    return <span className="font-mono text-[11px] text-amber-300">{t('ins.newSeason')}</span>;
   }
   const tone =
     row.better === null
@@ -338,13 +382,12 @@ function Delta({ row }) {
 }
 
 function ProgressTable({ rows, hint }) {
+  const t = useT();
   return (
     <Section
-      title="Personal progress"
+      title={t('ins.progress')}
       hint={
-        rows.length
-          ? hint
-          : 'Two snapshots are needed before progress can be measured in this area.'
+        rows.length ? hint : t('ins.progressNeedTwo')
       }
     >
       {rows.length ? (
@@ -352,21 +395,27 @@ function ProgressTable({ rows, hint }) {
           <table className="w-full min-w-[34rem] text-left">
             <thead>
               <tr className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">
-                <th className="pb-2 font-normal">Metric</th>
-                <th className="pb-2 text-right font-normal">Then</th>
-                <th className="pb-2 text-right font-normal">Now</th>
-                <th className="pb-2 text-right font-normal">Change</th>
+                <th className="pb-2 font-normal">{t('ins.metric')}</th>
+                <th className="pb-2 text-right font-normal">{t('ins.then')}</th>
+                <th className="pb-2 text-right font-normal">{t('ins.now')}</th>
+                <th className="pb-2 text-right font-normal">{t('ins.change')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/70">
-              {rows.map((row) => (
-                <tr key={row.key} className="text-sm">
-                  <td className="py-1.5 text-neutral-200">
-                    {row.label}
-                    {row.note ? (
-                      <span className="mt-0.5 block text-[11px] text-amber-300/80">{row.note}</span>
-                    ) : null}
-                  </td>
+              {rows.map((row) => {
+                const note = row.note ? (row.note.match(SEASON_NOTE) || []) : [];
+                return (
+                  <tr key={row.key} className="text-sm">
+                    <td className="py-1.5 text-neutral-200">
+                      {t('metric.' + row.key, undefined, row.label)}
+                      {row.note ? (
+                        <span className="mt-0.5 block text-[11px] text-amber-300/80">
+                          {note.length
+                            ? t('ins.seasonNote', { from: note[1], to: note[2] })
+                            : row.note}
+                        </span>
+                      ) : null}
+                    </td>
                   <td className="py-1.5 text-right font-mono text-[11px] text-gray-500">
                     {number(row.from)}
                   </td>
@@ -377,7 +426,8 @@ function ProgressTable({ rows, hint }) {
                     <Delta row={row} />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -386,36 +436,96 @@ function ProgressTable({ rows, hint }) {
   );
 }
 
-function EfficiencyGrid({ rows }) {
+/**
+ * The bot ships each efficiency row with an English label, a composed text
+ * and a composed narrative. All three are recomputed here from the row's own
+ * number (plus the win/loss counts from the progress series) so the wording
+ * follows the locale; the bot's English remains the fallback for any ratio
+ * added later without a template.
+ */
+function EfficiencyGrid({ rows, series = [] }) {
+  const t = useT();
   if (!rows.length) return null;
+
+  const wording = (row) => {
+    const value = typeof row.value === 'number' ? row.value : null;
+    if (value === null) return { label: t('eff.' + row.key, undefined, row.label), text: row.text, narrative: row.narrative };
+    switch (row.key) {
+      case 'killDeath':
+        return {
+          label: t('eff.killDeath'),
+          text: t('eff.killDeathText', { n: value.toFixed(1) }),
+          narrative: t('eff.killDeathNarr', { n: value.toFixed(1) }),
+        };
+      case 'healDeath':
+        return {
+          label: t('eff.healDeath'),
+          text: t('eff.healDeathText', { n: value.toFixed(1) }),
+          narrative: t('eff.healDeathNarr', { n: value.toFixed(1) }),
+        };
+      case 'winRate': {
+        const wins = series.find((r) => r.key === 'victories')?.to;
+        const losses = series.find((r) => r.key === 'defeats')?.to;
+        return {
+          label: t('eff.winRate'),
+          text: t('eff.winRateText', { pct: (value * 100).toFixed(0) }),
+          narrative:
+            Number.isFinite(wins) && Number.isFinite(losses)
+              ? t('eff.winRateNarr', { wins: compact(wins), losses: compact(losses) })
+              : row.narrative,
+        };
+      }
+      case 'meritPower':
+        return {
+          label: t('eff.meritPower'),
+          text: t('eff.meritPowerText', { n: value.toFixed(4) }),
+          narrative: t('eff.meritPowerNarr'),
+        };
+      case 't45LossShare':
+        return {
+          label: t('eff.t45LossShare'),
+          text: t('eff.t45Text', { pct: (value * 100).toFixed(0) }),
+          narrative: value > 0.5 ? t('eff.t45HighNarr') : t('eff.t45LowNarr'),
+        };
+      default:
+        return { label: t('eff.' + row.key, undefined, row.label), text: row.text, narrative: row.narrative };
+    }
+  };
+
   return (
-    <Section title="Efficiency" hint="How effectively this account converts effort into results.">
+    <Section title={t('ins.efficiency')} hint={t('ins.efficiencyHint')}>
       <div className="grid gap-2 sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.key} className="rounded-sm border border-gray-800 bg-black/20 px-3 py-2.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs text-neutral-200">{row.label}</span>
-              <span className="font-mono text-[11px] text-amber-300">{row.text}</span>
+        {rows.map((row) => {
+          const w = wording(row);
+          return (
+            <div key={row.key} className="rounded-sm border border-gray-800 bg-black/20 px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs text-neutral-200">{w.label}</span>
+                <span className="font-mono text-[11px] text-amber-300">{w.text}</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{w.narrative}</p>
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{row.narrative}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Section>
   );
 }
 
 function ComparisonList({ rows, hint }) {
+  const t = useT();
   if (!rows.length) return null;
   return (
-    <Section title="Since the last reading" hint={hint}>
+    <Section title={t('ins.sinceLast')} hint={hint}>
       <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
         {rows.map((row) => (
           <div
             key={row.key}
             className="flex items-baseline justify-between gap-3 border-b border-gray-800/70 pb-1.5 text-xs"
           >
-            <span className="truncate text-neutral-200">{row.label}</span>
+            <span className="truncate text-neutral-200">
+              {t('metric.' + row.key, undefined, row.label)}
+            </span>
             <span className="shrink-0 font-mono text-[11px] text-gray-600">
               {number(row.previous)} → {number(row.recent)}
             </span>
@@ -430,13 +540,16 @@ function ComparisonList({ rows, hint }) {
 }
 
 function GainsList({ rows }) {
+  const t = useT();
   if (!rows.length) return null;
   return (
-    <Section title="Biggest gains" hint="Where this area moved the most over the window.">
+    <Section title={t('ins.gains')} hint={t('ins.gainsHint')}>
       <div className="flex flex-wrap gap-2">
         {rows.map((row) => (
           <div key={row.key} className="rounded-sm border border-gray-800 bg-black/20 px-3 py-2">
-            <p className="text-[11px] text-gray-500">{row.label}</p>
+            <p className="text-[11px] text-gray-500">
+              {t('metric.' + row.key, undefined, row.label)}
+            </p>
             <p className="font-mono text-sm text-emerald-300">
               {row.deltaText}
               <span className="ml-1.5 text-[11px] text-gray-600">{row.deltaPctText}</span>
@@ -449,15 +562,16 @@ function GainsList({ rows }) {
 }
 
 function MilestoneBars({ rows }) {
+  const t = useT();
   return (
-    <Section title="Milestones" hint="Next round-number target for each tracked stat.">
+    <Section title={t('ins.milestones')} hint={t('ins.milestonesHint')}>
       {rows.length ? (
         <table className="w-full table-fixed border-collapse text-left">
           <thead>
             <tr className="border-b border-gray-800 font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">
-              <th className="py-1.5 pr-2 font-normal">Stat</th>
-              <th className="w-20 py-1.5 pr-2 text-right font-normal sm:w-24">Now / target</th>
-              <th className="w-14 py-1.5 pr-2 font-normal sm:w-32">To target</th>
+              <th className="py-1.5 pr-2 font-normal">{t('ins.statCol')}</th>
+              <th className="w-20 py-1.5 pr-2 text-right font-normal sm:w-24">{t('ins.nowTarget')}</th>
+              <th className="w-14 py-1.5 pr-2 font-normal sm:w-32">{t('ins.toTarget')}</th>
               <th className="w-9 py-1.5 text-right font-normal sm:w-10">%</th>
             </tr>
           </thead>
@@ -466,9 +580,11 @@ function MilestoneBars({ rows }) {
             {rows.map((row) => (
               <tr key={row.key}>
                 <td className="py-2 pr-2 align-middle">
-                  <span className="block truncate text-xs text-neutral-200">{row.label}</span>
+                  <span className="block truncate text-xs text-neutral-200">
+                    {t('metric.' + row.key, undefined, row.label)}
+                  </span>
                   <span className="mt-0.5 block truncate font-mono text-[10px] text-gray-600">
-                    {row.remainingText} to go
+                    {t('ins.toGo', { remaining: row.remainingText })}
                   </span>
                 </td>
 
@@ -494,15 +610,16 @@ function MilestoneBars({ rows }) {
           </tbody>
         </table>
       ) : (
-        <Empty>No tracked stat in this area has a value yet.</Empty>
+        <Empty>{t('ins.milestonesEmpty')}</Empty>
       )}
     </Section>
   );
 }
 
 function TabBar({ active, onChange }) {
+  const t = useT();
   return (
-    <nav className="flex gap-1 overflow-x-auto px-2 py-2" aria-label="Player sections">
+    <nav className="flex gap-1 overflow-x-auto px-2 py-2" aria-label={t('ins.sectionsAria')}>
       {TABS.map((item) => {
         const Icon = item.icon;
         const selected = active === item.key;
@@ -519,7 +636,7 @@ function TabBar({ active, onChange }) {
             }`}
           >
             <Icon className={`h-3.5 w-3.5 ${selected ? 'text-amber-400' : 'text-gray-600'}`} />
-            {item.label}
+            {t(item.labelKey)}
           </button>
         );
       })}
@@ -536,6 +653,7 @@ export default function PlayerInsights({
   sections = [],
   sectionsDate = null,
 }) {
+  const t = useT();
   const [tab, setTab] = useState('overview');
   const [showInfo, setShowInfo] = useState(false);
 
@@ -582,11 +700,17 @@ export default function PlayerInsights({
       .filter((item) => item.earnedOn)
       .sort((a, b) => b.earnedOn.localeCompare(a.earnedOn))[0] || null;
   const pending = coverage.missing.length
-    ? `Awaiting detail capture: ${coverage.missing.join(', ')}. These appear once the background pass has read this player's page.`
+    ? t('ins.pending', {
+        missing: coverage.missing.map((token) => t('cov.' + token, undefined, token)).join(', '),
+      })
     : null;
 
   const progressHint = progress.series.length
-    ? `${progress.from} → ${progress.to} · ${progress.windowDays} days · this player against themselves`
+    ? t('ins.progressMeta', {
+        from: progress.from,
+        to: progress.to,
+        days: progress.windowDays,
+      })
     : null;
 
   const picks = (rows, category) => rows.filter((row) => inCategory(category, row));
@@ -601,6 +725,24 @@ export default function PlayerInsights({
   });
 
   const ArchIcon = ARCHETYPE_ICON[playstyle.key] || Sparkles;
+
+  // Reasons ship pre-composed in English; the growth one is rebuilt from the
+  // tracked power series so its delta follows the locale too.
+  const signalReason = (signal) => {
+    if (signal.key === 'growth') {
+      const power = progress.series.find((row) => row.key === 'power');
+      return power && Number.isFinite(power.from) && Number.isFinite(power.to)
+        ? t('sig.reasonGrowth', { delta: signedCompact(power.from, power.to) })
+        : t('sig.reasonGrowthStatic');
+    }
+    const reasons = {
+      overall: 'sig.reasonOverall',
+      combatActivity: 'sig.reasonCombat',
+      warContribution: 'sig.reasonWar',
+      accountProgression: 'sig.reasonAccount',
+    };
+    return reasons[signal.key] ? t(reasons[signal.key]) : signal.reason;
+  };
 
   return (
     <div>
@@ -619,7 +761,7 @@ export default function PlayerInsights({
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="min-w-0">
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                  Your war profile
+                  {t('ins.yourProfile')}
                 </p>
                 <div className="mt-1.5 flex items-center gap-2">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-gray-700/70 bg-gray-500/5">
@@ -627,12 +769,14 @@ export default function PlayerInsights({
                       className={`h-4 w-4 ${LEVEL_TEXT[playstyle.level] || 'text-neutral-200'}`}
                     />
                   </span>
-                  <h2 className="text-base font-semibold text-neutral-100">{playstyle.label}</h2>
+                  <h2 className="text-base font-semibold text-neutral-100">
+                    {t('arch.' + playstyle.key, undefined, playstyle.label)}
+                  </h2>
                   {playstyle.level && playstyle.level !== 'unknown' ? (
                     <span
                       className={`rounded-sm border border-gray-700 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${LEVEL_TEXT[playstyle.level]}`}
                     >
-                      {playstyle.level}
+                      {t('lvl.' + playstyle.level, undefined, playstyle.level)}
                     </span>
                   ) : null}
                   <button
@@ -640,8 +784,8 @@ export default function PlayerInsights({
                     onClick={() => setShowInfo((open) => !open)}
                     aria-expanded={showInfo}
                     aria-controls="war-profile-info"
-                    aria-label="What this profile means"
-                    title="What this profile means"
+                    aria-label={t('ins.whatMeans')}
+                    title={t('ins.whatMeans')}
                     className="rounded p-1 text-gray-500 transition hover:bg-gray-500/10 hover:text-neutral-100"
                   >
                     <Info className="h-4 w-4" />
@@ -656,15 +800,17 @@ export default function PlayerInsights({
                     className="mt-3 rounded-sm border border-gray-800 bg-black/20 px-3 py-3"
                   >
                     <p className="text-sm leading-relaxed text-gray-400">
-                      {playstyle.blurb ||
-                        "This account's profile is read from its own captured figures."}
+                      {t('blurb.' + playstyle.key, undefined, playstyle.blurb || '') ||
+                        t('ins.blurbFallback')}
                     </p>
                     <dl className="mt-3 grid gap-x-5 gap-y-1 sm:grid-cols-2">
                       {profile.map((signal) => (
                         <div key={signal.key} className="border-b border-gray-800/70 pb-1.5 pt-0.5">
-                          <dt className="text-xs text-neutral-300">{signal.label}</dt>
+                          <dt className="text-xs text-neutral-300">
+                            {t(SIGNAL_KEYS[signal.key] || '', undefined, signal.label)}
+                          </dt>
                           <dd className="mt-0.5 text-[11px] leading-relaxed text-gray-500">
-                            {signal.reason}
+                            {signalReason(signal)}
                           </dd>
                         </div>
                       ))}
@@ -684,7 +830,9 @@ export default function PlayerInsights({
                       key={`s-${item}`}
                       className="rounded-sm bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300"
                     >
-                      Strength · {item}
+                      {t('ins.strength', {
+                        item: t(itemKeyFor(item) || '', undefined, item),
+                      })}
                     </span>
                   ))}
                   {narrative.improvements.map((item) => (
@@ -692,7 +840,9 @@ export default function PlayerInsights({
                       key={`i-${item}`}
                       className="rounded-sm bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300"
                     >
-                      Room to grow · {item}
+                      {t('ins.roomGrow', {
+                        item: t(itemKeyFor(item) || '', undefined, item),
+                      })}
                     </span>
                   ))}
                 </div>
@@ -700,10 +850,19 @@ export default function PlayerInsights({
 
               <div className="min-w-0">
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                  Recent activity
+                  {t('ins.recentActivity')}
                 </p>
                 <p className="mt-1.5 text-sm text-gray-400">
-                  {activity.available ? activity.narrative : 'Activity'}
+                  {activity.available
+                    ? t(
+                        `act.narr${Math.min(
+                          activity.areas.filter((area) =>
+                            area.level === 'surging' || area.level === 'active',
+                          ).length,
+                          3,
+                        )}`,
+                      )
+                    : t('act.unavailable')}
                 </p>
                 <div className="mt-3 space-y-1.5">
                   {activity.areas.map((area) => (
@@ -711,11 +870,13 @@ export default function PlayerInsights({
                       key={area.key}
                       className="flex items-center justify-between border-b border-gray-800/70 pb-1.5 text-xs"
                     >
-                      <span className="text-neutral-200">{area.label}</span>
+                      <span className="text-neutral-200">
+                        {t('act.' + area.key, undefined, area.label)}
+                      </span>
                       <span
                         className={`font-mono text-[11px] uppercase tracking-[0.1em] ${ACTIVITY_COLOR[area.level]}`}
                       >
-                        {area.level}
+                        {t('lvl.' + area.level, undefined, area.level)}
                         {area.deltaText ? (
                           <span className="ml-2 text-gray-600">{area.deltaText}</span>
                         ) : null}
@@ -746,8 +907,8 @@ export default function PlayerInsights({
             }
           />
           <ProgressTable rows={categoryRows(tab).progress} hint={progressHint} />
-          <EfficiencyGrid rows={categoryRows(tab).efficiency} />
-          <ComparisonList rows={categoryRows(tab).periods} hint={comparison.narrative} />
+          <EfficiencyGrid rows={categoryRows(tab).efficiency} series={progress.series} />
+          <ComparisonList rows={categoryRows(tab).periods} hint={t('narr.comparison')} />
           <GainsList rows={categoryRows(tab).gains} />
           <MilestoneBars rows={categoryRows(tab).milestones} />
         </>
@@ -756,8 +917,8 @@ export default function PlayerInsights({
       {tab === 'records' ? (
         <>
           <Section
-            title="Milestones earned"
-            hint="Phoenix Herald's own badges, awarded on absolute figures."
+            title={t('ins.earnedTitle')}
+            hint={t('ins.earnedHint')}
             action={
               <span className="flex items-center gap-2">
                 <span className="h-1 w-14 overflow-hidden rounded-full bg-gray-800">
@@ -782,7 +943,7 @@ export default function PlayerInsights({
                   <div key={group} className="min-w-0">
                     <div className="flex items-baseline justify-between gap-3 border-b border-gray-800 pb-1.5">
                       <h4 className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">
-                        {group}
+                        {t(GROUP_KEYS[group] || '', undefined, group)}
                       </h4>
                       <span className="font-mono text-[10px] tabular-nums text-gray-600">
                         {items.filter((item) => item.earned).length}/{items.length}
@@ -805,12 +966,12 @@ export default function PlayerInsights({
                               badge.earned ? 'text-neutral-100' : 'text-gray-500'
                             }`}
                           >
-                            {badge.label}
+                            {t('badge.' + badge.key, undefined, badge.label)}
                           </span>
 
                           {badge.earned ? (
                             <span className="shrink-0 font-mono text-[10px] tabular-nums text-gray-600">
-                              {badge.earnedOn || 'Earned'}
+                              {badge.earnedOn || t('ins.earned')}
                             </span>
                           ) : (
                             <span className="flex shrink-0 items-center gap-2">
@@ -834,15 +995,15 @@ export default function PlayerInsights({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-gray-600">Badges appear once figures are captured.</p>
+              <p className="text-xs text-gray-600">{t('ins.badgesEmpty')}</p>
             )}
 
             {recentBadge ? (
               <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-gray-800 pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">
                 <TrendingUp className="h-3 w-3 text-emerald-400" />
-                <span>Most recent</span>
+                <span>{t('ins.mostRecent')}</span>
                 <span className="normal-case tracking-normal text-neutral-300">
-                  {recentBadge.label}
+                  {t('badge.' + recentBadge.key, undefined, recentBadge.label)}
                 </span>
                 {recentBadge.earnedOn ? (
                   <span className="tabular-nums">· {recentBadge.earnedOn}</span>
@@ -852,10 +1013,7 @@ export default function PlayerInsights({
           </Section>
 
           {achievements.length ? (
-            <Section
-              title="Source achievements"
-              hint="Recorded verbatim from the player's own page."
-            >
+            <Section title={t('ins.sourceAchievements')} hint={t('roster.verbatim')}>
               <div className="grid gap-1.5 sm:grid-cols-2">
                 {achievements.map((item) => {
                   const done = Boolean(item.completedAt);
@@ -867,7 +1025,7 @@ export default function PlayerInsights({
                       className="flex items-baseline justify-between gap-3 border-b border-gray-800/70 pb-1.5 text-xs"
                     >
                       <span className={`truncate ${done ? 'text-neutral-100' : 'text-neutral-300'}`}>
-                        {item.name}
+                        {t(achievementKeyFor(item.name) || '', undefined, item.name)}
                       </span>
                       <span className="shrink-0 font-mono text-[11px] text-neutral-100">
                         {done
@@ -897,7 +1055,7 @@ export default function PlayerInsights({
       <div className="border-t border-gray-800 px-4 py-3">
         <p className="flex items-start gap-2 text-[11px] leading-relaxed text-gray-600">
           <Swords className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-700" />
-          {narrative.privacyNote}
+          {t('narr.privacy')}
         </p>
       </div>
     </div>

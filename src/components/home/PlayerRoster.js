@@ -10,6 +10,8 @@ function humanize(key) {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+export { humanize };
+
 function imageSrc(value) {
   if (!value) return null;
   try {
@@ -30,12 +32,20 @@ function imageSrc(value) {
 /**
  * Renders whatever stats the stored roster supplies. Stat fields are not fixed,
  * so keys are displayed generically: a new field appears here without a UI
- * change.
+ * change. The home page passes `noStatsLabel` and `statLabel` so this shared
+ * row can speak the visitor's language; other callers keep the English
+ * defaults.
  *
  * `bare` drops the card chrome so a section can wrap the rows itself and keep
  * its pagination controls in the same box.
  */
-export default function PlayerRoster({ players, bare = false, itemType = 'player' }) {
+export default function PlayerRoster({
+  players,
+  bare = false,
+  itemType = 'player',
+  noStatsLabel = 'No stats yet',
+  statLabel = null,
+}) {
   if (!players?.length) return null;
 
   const frame = bare
@@ -82,14 +92,14 @@ export default function PlayerRoster({ players, bare = false, itemType = 'player
 
               {stats.length === 0 ? (
                 <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-gray-600">
-                  No stats yet
+                  {noStatsLabel}
                 </span>
               ) : (
                 <dl className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 sm:gap-x-4">
                   {stats.map(([key, value]) => (
                     <div key={key} className="flex items-baseline gap-1.5">
                       <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">
-                        {humanize(key)}
+                        {statLabel ? statLabel(key) : humanize(key)}
                       </dt>
                       <dd className="font-mono text-[11px] tabular-nums text-neutral-100">
                         {String(value)}

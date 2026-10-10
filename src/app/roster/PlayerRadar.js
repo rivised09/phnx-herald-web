@@ -1,3 +1,7 @@
+'use client';
+
+import { useT } from '../../components/i18n/LocaleProvider';
+
 const CENTER_X = 320;
 const CENTER_Y = 230;
 const RADIUS = 145;
@@ -56,16 +60,40 @@ function percentile(value) {
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
 }
 
-function points(value) {
+function points(value, t) {
   if (!Number.isFinite(value)) return '—';
   const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1);
-  return `${rounded} pts`;
+  return t('radar.pts', { n: rounded });
 }
 
-function readingLabel(reading) {
+function readingLabel(reading, t) {
   if (!reading) return null;
-  if (reading.season) return `Season ${reading.season}`;
+  if (reading.season) return t('radar.season', { n: reading.season });
   return reading.date;
+}
+
+/**
+ * The summary sentence is rebuilt here rather than taken from the bot so its
+ * axis names and wording follow the locale. The bot's own summary stays as the
+ * fallback if anything about the deltas is unrecognised.
+ */
+function buildSummary(t, radar, current, previous, deltas, axes) {
+  if (!current) return null;
+  const fromTo = previous
+    ? `${readingLabel(previous, t)} → ${readingLabel(current, t)}`
+    : t('radar.captured', { label: readingLabel(current, t) });
+  if (!deltas.length) return fromTo;
+  const axisLabel = (key) => {
+    const axis = axes.find((item) => item.key === key);
+    return t(`radar.${key}`, undefined, axis?.label || key);
+  };
+  const better = deltas.filter((row) => row.direction === 'better').map((row) => axisLabel(row.key));
+  const worse = deltas.filter((row) => row.direction === 'worse').map((row) => axisLabel(row.key));
+  let move;
+  if (better.length) move = t('radar.improvedOn', { axes: better.join(', ') });
+  else if (worse.length) move = t('radar.slippedOn', { axes: worse.join(', ') });
+  else move = t('radar.unchanged');
+  return `${fromTo} · ${move}`;
 }
 
 /**
@@ -78,26 +106,29 @@ function readingLabel(reading) {
  * than a sentence explaining why there is no chart.
  */
 export default function PlayerRadar({ radar }) {
+  const t = useT();
   const axes = radar?.axes?.length === ANGLES.length ? radar.axes : DEFAULT_AXES;
   const current = radar?.available ? radar.current : null;
   const previous = radar?.available ? radar.previous : null;
   const deltas = radar?.available ? radar.deltas : [];
   const values = current ? current.values : axes.map(() => null);
-  const note = radar?.note || 'Lower percentages indicate a higher KvK ranking.';
-  const summary = current ? radar.summary : null;
+  const note = t('radar.note');
+  const summary = buildSummary(t, radar, current, previous, deltas, axes);
 
   return (
     <section className="border-t border-gray-800 px-4 py-4">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-            Playstyle hexagon
+            {t('radar.hexagon')}
           </h2>
           <p className="mt-1 text-xs text-gray-600">{note}</p>
         </div>
         {current ? (
           <span className="shrink-0 font-mono text-[10px] text-gray-600">
-            {radar.readings.length} reading{radar.readings.length === 1 ? '' : 's'}
+            {t(radar.readings.length === 1 ? 'radar.readingOne' : 'radar.readingMany', {
+              n: radar.readings.length,
+            })}
           </span>
         ) : null}
       </div>
@@ -107,9 +138,11 @@ export default function PlayerRadar({ radar }) {
           viewBox={VIEWBOX}
           className="mx-auto h-auto w-full max-w-[28rem]"
           role="img"
-          aria-label={summary ? `Playstyle hexagon. ${summary}` : 'Playstyle hexagon, no readings yet'}
+          aria-label={
+            summary ? t('radar.ariaSummary', { summary }) : t('radar.ariaEmpty')
+          }
         >
-          <title>{summary || 'No playstyle readings captured yet.'}</title>
+          <title>{summary || t('radar.noReadings')}</title>
 
           {RINGS.map((scale) => (
             <path
@@ -161,15 +194,23 @@ export default function PlayerRadar({ radar }) {
             const axis = axes[index];
             const delta = deltas.find((row) => row.key === axis.key);
             const labelPos = polar(ANGLES[index], LABEL_RADIUS);
+            const axisLabel = t(`radar.${axis.key}`, undefined, axis.label);
             return (
               <g key={axis.key}>
                 {current ? <circle cx={x} cy={y} r="3.5" fill="#f59e0b" /> : null}
                 <title>
                   {current
-                    ? `${axis.label}: ${percentile(value)}${
-                        previous && delta ? ` (previous ${percentile(previous.values[index])})` : ''
-                      }`
-                    : `${axis.label}: no reading`}
+                    ? t('radar.axisCurrent', {
+                        axis: axisLabel,
+                        value:
+                          percentile(value) +
+                          (previous && delta
+                            ? t('radar.axisPrev', {
+                                pct: percentile(previous.values[index]),
+                              })
+                            : ''),
+                      })
+                    : t('radar.axisNone', { axis: axisLabel })}
                 </title>
                 <text
                   x={labelPos[0]}
@@ -179,7 +220,7 @@ export default function PlayerRadar({ radar }) {
                   fill={current ? '#d4d4d8' : '#52525b'}
                   fontWeight="500"
                 >
-                  {axis.label}
+                  {axisLabel}
                 </text>
                 <text
                   x={labelPos[0]}
@@ -189,7 +230,7 @@ export default function PlayerRadar({ radar }) {
                   fill="#71717a"
                   fontFamily="ui-monospace, monospace"
                 >
-                  {current ? `Top ${percentile(value)}` : '—'}
+                  {current ? t('radar.top', { pct: percentile(value) }) : '—'}
                 </text>
               </g>
             );
@@ -199,18 +240,20 @@ export default function PlayerRadar({ radar }) {
         {current ? (
           <div className="space-y-5">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">Plotted</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">
+                {t('radar.plotted')}
+              </p>
               <ul className="mt-2 space-y-2">
                 <li className="flex items-center gap-2">
                   <span className="h-2.5 w-5 shrink-0 rounded-sm bg-amber-400" />
                   <span className="text-xs text-neutral-100">
-                    {readingLabel(current) || 'Latest'}
+                    {readingLabel(current, t) || t('radar.latest')}
                   </span>
                 </li>
                 {previous ? (
                   <li className="flex items-center gap-2">
                     <span className="h-2.5 w-5 shrink-0 rounded-sm border border-dashed border-gray-500 bg-gray-500/20" />
-                    <span className="text-xs text-gray-400">{readingLabel(previous)}</span>
+                    <span className="text-xs text-gray-400">{readingLabel(previous, t)}</span>
                   </li>
                 ) : null}
               </ul>
@@ -219,7 +262,7 @@ export default function PlayerRadar({ radar }) {
             {deltas.length ? (
               <div>
                 <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">
-                  Since {readingLabel(previous)}
+                  {t('radar.since', { label: readingLabel(previous, t) })}
                 </p>
                 <ul className="mt-2 space-y-1.5">
                   {deltas.map((row) => {
@@ -233,11 +276,13 @@ export default function PlayerRadar({ radar }) {
                       row.direction === 'better' ? '↓' : row.direction === 'worse' ? '↑' : '→';
                     return (
                       <li key={row.key} className="flex items-baseline justify-between gap-3 text-xs">
-                        <span className="truncate text-neutral-300">{row.label}</span>
+                        <span className="truncate text-neutral-300">
+                          {t(`radar.${row.key}`, undefined, row.label)}
+                        </span>
                         <span className="flex shrink-0 items-baseline gap-1.5 font-mono text-[10px]">
                           <span className="text-gray-600">{percentile(row.previous)}</span>
                           <span className={tone}>
-                            {arrow} {points(Math.abs(row.delta))}
+                            {arrow} {points(Math.abs(row.delta), t)}
                           </span>
                           <span className="text-neutral-100">{percentile(row.current)}</span>
                         </span>
@@ -247,9 +292,7 @@ export default function PlayerRadar({ radar }) {
                 </ul>
               </div>
             ) : (
-              <p className="text-xs text-gray-600">
-                A second reading is needed before any axis can move.
-              </p>
+              <p className="text-xs text-gray-600">{t('radar.needSecond')}</p>
             )}
 
             <p className="border-t border-gray-800 pt-3 text-xs leading-relaxed text-gray-600">
