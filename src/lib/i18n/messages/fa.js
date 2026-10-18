@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'برای این اتحادها بازیکنی پیدا نشد.',
 
   'search.label': 'جستجوی اتحاد و لرد',
-  'search.placeholder': 'جستجوی اتحاد و لرد…',
+  'search.placeholder': 'جستجوی اتحاد، لرد یا شناسه بازیکن…',
   'search.clear': 'پاک کردن جستجو',
   'search.kindAlliance': 'اتحاد',
   'search.kindLord': 'لرد',

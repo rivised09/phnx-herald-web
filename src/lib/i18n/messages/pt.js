@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Não foram encontrados jogadores para estas alianças.',
 
   'search.label': 'Procurar alianças e lords',
-  'search.placeholder': 'Procurar alianças e lords…',
+  'search.placeholder': 'Procurar alianças, lords ou ID do jogador…',
   'search.clear': 'Limpar pesquisa',
   'search.kindAlliance': 'Aliança',
   'search.kindLord': 'Lord',

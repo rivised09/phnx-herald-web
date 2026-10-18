@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Nie znaleziono graczy dla tych sojuszy.',
 
   'search.label': 'Szukaj sojuszy i lordów',
-  'search.placeholder': 'Szukaj sojuszy i lordów…',
+  'search.placeholder': 'Szukaj sojuszy, lordów lub ID gracza…',
   'search.clear': 'Wyczyść wyszukiwanie',
   'search.kindAlliance': 'Sojusz',
   'search.kindLord': 'Lord',

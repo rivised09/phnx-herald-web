@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Tidak ada pemain ditemukan untuk aliansi ini.',
 
   'search.label': 'Cari aliansi dan lord',
-  'search.placeholder': 'Cari aliansi dan lord…',
+  'search.placeholder': 'Cari aliansi, lord, atau ID pemain…',
   'search.clear': 'Hapus pencarian',
   'search.kindAlliance': 'Aliansi',
   'search.kindLord': 'Lord',

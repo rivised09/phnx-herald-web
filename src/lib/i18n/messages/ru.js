@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Для этих альянсов игроки не найдены.',
 
   'search.label': 'Поиск альянсов и лордов',
-  'search.placeholder': 'Поиск альянсов и лордов…',
+  'search.placeholder': 'Поиск альянсов, лордов или ID игрока…',
   'search.clear': 'Очистить поиск',
   'search.kindAlliance': 'Альянс',
   'search.kindLord': 'Лорд',

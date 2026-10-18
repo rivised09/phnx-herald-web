@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'これらの同盟にプレイヤーが見つかりませんでした。',
 
   'search.label': '同盟と領主を検索',
-  'search.placeholder': '同盟と領主を検索…',
+  'search.placeholder': '同盟・領主・プレイヤーIDを検索…',
   'search.clear': '検索をクリア',
   'search.kindAlliance': '同盟',
   'search.kindLord': '領主',

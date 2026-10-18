@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Geen spelers gevonden voor deze allianties.',
 
   'search.label': 'Zoek allianties en lords',
-  'search.placeholder': 'Zoek allianties en lords…',
+  'search.placeholder': 'Zoek allianties, lords of speler-ID…',
   'search.clear': 'Zoekopdracht wissen',
   'search.kindAlliance': 'Alliantie',
   'search.kindLord': 'Lord',

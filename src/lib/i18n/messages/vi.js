@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Không tìm thấy người chơi nào cho các liên minh này.',
 
   'search.label': 'Tìm liên minh và chúa công',
-  'search.placeholder': 'Tìm liên minh và chúa công…',
+  'search.placeholder': 'Tìm liên minh, chúa công hoặc ID người chơi…',
   'search.clear': 'Xóa tìm kiếm',
   'search.kindAlliance': 'Liên minh',
   'search.kindLord': 'Chúa công',

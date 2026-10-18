@@ -238,7 +238,7 @@ export async function getLeadershipDashboard() {
     const status = activity === 'Highly Active' ? 'Core Fighter' : activity === 'Active' ? 'Support' : activity === 'Dormant' ? 'Dormant' : 'Monitor';
     return {
       id: row.lord.sourceId.toString(),
-      name: row.lord.name,
+      name: row.name || row.lord.name,
       power: compactNumber(Number(row.power)),
       powerValue: Number(row.power),
       activity,
@@ -442,7 +442,9 @@ export async function getStoredRoster({ date = null } = {}) {
     if (row.memberCount) stats.Members = String(row.memberCount);
     return {
       id: row.alliance.id,
-      name: row.alliance.name,
+      // The name this snapshot recorded; rows predating the column carry the
+      // live name instead.
+      name: row.name || row.alliance.name,
       rank: row.rank,
       stats,
     };
@@ -455,7 +457,10 @@ export async function getStoredRoster({ date = null } = {}) {
     if (power) stats.Power = power;
     return {
       id: row.lord.sourceId.toString(),
-      name: row.lord.name,
+      // The snapshot's own name - a player who has since renamed is still
+      // listed (and found through search) under the name this date shows.
+      // Rows predating the column keep the live name.
+      name: row.name || row.lord.name,
       index: row.rank,
       allianceId: row.alliance ? row.alliance.name : null,
       avatar: usableAvatar(row.avatarUrl) || avatarByLord.get(row.lordId) || null,
@@ -767,12 +772,15 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     metricsByDate,
     radarByDate,
     serverNumber,
-    name: row.lord.name,
+    name: row.name || row.lord.name,
   });
 
   return {
     id: row.lord.sourceId.toString(),
-    name: row.lord.name,
+    // The name this snapshot lists, so a pinned profile reads the way the
+    // date it is pinned to read; rows predating the column keep the live
+    // name.
+    name: row.name || row.lord.name,
     rank: row.rank,
     power: formatStat(row.power),
     avatar: usableAvatar(row.avatarUrl) || avatarByLord.get(row.lordId) || null,
@@ -846,7 +854,9 @@ export async function getAllianceDetail(id, { date = null } = {}) {
   });
   return {
     id: row.alliance.id,
-    name: row.alliance.name,
+    // The name this snapshot lists; rows predating the column keep the live
+    // name.
+    name: row.name || row.alliance.name,
     rank: row.rank || null,
     power: formatStat(row.power),
     memberCount: row.memberCount || members.length,
@@ -856,7 +866,9 @@ export async function getAllianceDetail(id, { date = null } = {}) {
     isLatest: wanted === snapshotDates[0],
     players: members.map((item) => ({
       id: item.lord.sourceId.toString(),
-      name: item.lord.name,
+      // The name this snapshot lists the member under; rows predating the
+      // column keep the live name.
+      name: item.name || item.lord.name,
       rank: item.rank,
       power: formatStat(item.power),
     })),
