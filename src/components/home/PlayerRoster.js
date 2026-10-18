@@ -18,6 +18,13 @@ export { humanize };
 
 function imageSrc(value) {
   if (!value) return null;
+  // The source hands out root-relative paths (its own /image-proxy/ routes,
+  // which this site serves too). new URL() throws on those without a base,
+  // which used to blank the photo out to initials - so they pass straight
+  // through, the same guard Avatar.js uses, placeholder asset excepted.
+  if (value.startsWith('/')) {
+    return /codweb_all_three_avatar|\/static\/images\//.test(value) ? null : value;
+  }
   try {
     const url = new URL(value);
     if (url.hostname === 'oss-resource.farlightgames.com') {
@@ -77,9 +84,12 @@ export default function PlayerRoster({
                   ? `/roster/alliance/${encodeURIComponent(player.id)}`
                   : `/roster/player/${encodeURIComponent(player.id)}`
               }
-              className="flex items-center gap-3 px-3 py-2 sm:px-4"
+              // Top-aligned so the avatar sits on the name line instead of
+              // floating centered between the name and the merits block.
+              className="flex items-start gap-3 px-3 py-2 sm:px-4"
             >
-              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-700 bg-gray-500/10 font-mono text-[9px] text-gray-400">
+              {/* -mt-1 optically centres the 24px box on the 16px name line. */}
+              <span className="relative -mt-1 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-700 bg-gray-500/10 font-mono text-[9px] text-gray-400">
                 {player.name.slice(0, 2).toUpperCase()}
                 {imageSrc(player.avatar) && (
                   <img
