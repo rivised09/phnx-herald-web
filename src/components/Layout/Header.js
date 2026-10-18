@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { BookOpen, Flame, Menu, Users, X } from 'lucide-react';
+import { BookOpen, Menu, Users, X } from 'lucide-react';
 import LanguageButton from '../i18n/LanguageButton';
 import Onboarding from '../i18n/Onboarding';
 import { useT } from '../i18n/LocaleProvider';
@@ -43,9 +44,13 @@ export default function Header() {
       <header className="sticky top-0 z-40 border-b border-gray-800 bg-neutral-950/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
         <Link href={isPublicHome ? '/' : '/dashboard'} className="group flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-700 bg-gray-100 text-neutral-950 transition group-hover:-translate-y-px">
-            <Flame className="h-4 w-4" />
-          </div>
+          <Image
+            src="/logo.png"
+            alt=""
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-md object-contain transition group-hover:-translate-y-px"
+          />
           <div className="leading-tight">
             <div className="text-[15px] font-semibold tracking-tight text-neutral-100">
               {isPublicHome ? t('nav.brand') : 'Phoenix Herald'}

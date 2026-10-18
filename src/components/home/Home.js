@@ -9,6 +9,7 @@ import MeritFilter from './MeritFilter';
 import SnapshotFilter from './SnapshotFilter';
 import ServerStats from './ServerStats';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
+import LoadingOverlay from '../LoadingOverlay';
 import { buildSuggestions } from './suggestions';
 import { useT } from '../i18n/LocaleProvider';
 
@@ -182,10 +183,14 @@ export default function Home({
         </Notice>
       )}
 
+      {/* Reading another date: the card stands centered while the rows below
+          wait it out at reduced opacity. */}
+      {pending && <LoadingOverlay labelKey="home.loading" />}
+
       {status === 'ok' && total > 0 && (
         // While the pinned snapshot is still being read, the rows already on
-        // screen stay up at reduced opacity rather than collapsing into a
-        // spinner: they are still true data, just about to be replaced.
+        // screen stay up at reduced opacity under the card rather than
+        // collapsing away: they are still true data, just about to be replaced.
         <div
           className={`space-y-2 transition-opacity ${pending ? 'opacity-60' : ''}`}
           aria-busy={pending}
