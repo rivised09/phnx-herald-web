@@ -16,8 +16,12 @@ import { useT } from '../../components/i18n/LocaleProvider';
  * snaps back to the old date while the new payload is on its way, the spinner
  * says the switch is in flight, and the route's loading skeleton takes over as
  * soon as the new page starts rendering.
+ *
+ * `kind` names the detail route the picker sits on (the alliance profile got
+ * the same picker as the player one), so a pick stays on its own kind instead
+ * of always pushing the player route.
  */
-export default function SnapshotPicker({ id, dates = [], active, isLatest = true }) {
+export default function SnapshotPicker({ id, dates = [], active, isLatest = true, kind = 'player' }) {
   const router = useRouter();
   const t = useT();
   const latest = dates[0];
@@ -52,7 +56,7 @@ export default function SnapshotPicker({ id, dates = [], active, isLatest = true
             setSelected(next);
             startTransition(() => {
               router.push(
-                `/roster/player/${encodeURIComponent(id)}?date=${encodeURIComponent(next)}`,
+                `/roster/${kind}/${encodeURIComponent(id)}?date=${encodeURIComponent(next)}`,
               );
             });
           }}

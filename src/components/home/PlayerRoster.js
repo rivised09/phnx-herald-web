@@ -57,8 +57,14 @@ export default function PlayerRoster({
   noStatsLabel = 'No stats yet',
   statLabel = null,
   meritLabels = null,
+  linkDate = null,
 }) {
   if (!players?.length) return null;
+
+  // A date pinned in the home filter rides on every row link, so the click
+  // lands on that snapshot's detail - where the detail's own picker then shows
+  // the same date. Unpinned rows open the newest snapshot as before.
+  const dateQuery = linkDate ? `?date=${encodeURIComponent(linkDate)}` : '';
 
   const frame = bare
     ? 'divide-y divide-gray-800/80 overflow-hidden'
@@ -80,32 +86,36 @@ export default function PlayerRoster({
                 roster row still opens it. */}
             <Link
               href={
-                itemType === 'alliance'
+                (itemType === 'alliance'
                   ? `/roster/alliance/${encodeURIComponent(player.id)}`
-                  : `/roster/player/${encodeURIComponent(player.id)}`
+                  : `/roster/player/${encodeURIComponent(player.id)}`) + dateQuery
               }
               // Top-aligned so the avatar sits on the name line instead of
               // floating centered between the name and the merits block.
               className="flex items-start gap-3 px-3 py-2 sm:px-4"
             >
-              {/* -mt-1 optically centres the 24px box on the 16px name line. */}
-              <span className="relative -mt-1 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-700 bg-gray-500/10 font-mono text-[9px] text-gray-400">
-                {player.name.slice(0, 2).toUpperCase()}
-                {imageSrc(player.avatar) && (
-                  <img
-                    src={imageSrc(player.avatar)}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className="absolute inset-0 h-full w-full object-cover"
-                    onError={(e) => {
-                      // Keep the initials underneath rather than leaving a
-                      // broken-image hole when the source URL is dead.
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                )}
-              </span>
+              {/* Alliances have no portrait at all - the source never supplies
+                  one - so the box on that tab only ever held two initials and
+                  is left out entirely; the name starts at the row edge. */}
+              {itemType !== 'alliance' && (
+                <span className="relative -mt-1 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-700 bg-gray-500/10 font-mono text-[9px] text-gray-400">
+                  {player.name.slice(0, 2).toUpperCase()}
+                  {imageSrc(player.avatar) && (
+                    <img
+                      src={imageSrc(player.avatar)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-cover"
+                      onError={(e) => {
+                        // Keep the initials underneath rather than leaving a
+                        // broken-image hole when the source URL is dead.
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  )}
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 {/* Line one: the name with rank and power on its right edge. */}
                 <div className="flex items-center gap-3">

@@ -27,6 +27,9 @@ export default function RosterSection({
   showHeader = true,
   framed = true,
   meritLabels = null,
+  // The date the home filter has pinned, forwarded to every row link so a
+  // click opens that snapshot's detail page.
+  linkDate = null,
 }) {
   const [page, setPage] = useState(0);
   const t = useT();
@@ -72,6 +75,7 @@ export default function RosterSection({
           // humanized source key, which stays readable English.
           statLabel={(key) => t(`stat.${String(key).toLowerCase()}`, undefined, '') || humanize(key)}
           meritLabels={meritLabels}
+          linkDate={linkDate}
         />
         <div className="border-t border-gray-800">
           <Pagination

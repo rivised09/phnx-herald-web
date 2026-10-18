@@ -18,9 +18,9 @@ export const metadata = {
  * arriving after hydration; the client component keeps the refresh button
  * working against its own route.
  */
-async function loadRoster() {
+async function loadRoster(date) {
   try {
-    const body = await readHomeRoster();
+    const body = await readHomeRoster(date);
     if (!body?.status) return null;
     return body;
   } catch {
@@ -28,6 +28,10 @@ async function loadRoster() {
   }
 }
 
-export default async function Home() {
-  return <HomeClient initialData={await loadRoster()} />;
+export default async function Home({ searchParams }) {
+  // A ?date= in the URL is read here too, so reloading a pinned page renders
+  // that snapshot's rows straight into the HTML instead of flashing the
+  // newest ones first; the client adopts the pin after hydration.
+  const { date } = await searchParams;
+  return <HomeClient initialData={await loadRoster(date)} />;
 }

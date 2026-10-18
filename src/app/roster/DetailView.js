@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, History, Shield } from 'lucide-react';
 import DetailSearch from '../../components/home/DetailSearch';
 import { useT } from '../../components/i18n/LocaleProvider';
@@ -41,6 +42,14 @@ function Chip({ label, value, accent = false }) {
 export default function DetailView({ kind, data }) {
   const t = useT();
   const player = kind === 'player';
+  const searchParams = useSearchParams();
+  // The way back keeps the snapshot the detail is showing, so a date pinned
+  // from the home filter survives the round trip: home re-adopts it from its
+  // own URL and its row links keep opening that same date.
+  const backDate = searchParams.get('date');
+  const backHref = `${player ? '/?tab=players' : '/?tab=alliances'}${
+    backDate ? `&date=${encodeURIComponent(backDate)}` : ''
+  }`;
   // The source's own Profile block: it reads like a caption for the account, so
   // it sits in the header rather than behind a tab.
   const profile = player ? (data.sections || []).find((block) => !block.section) : null;
@@ -52,7 +61,7 @@ export default function DetailView({ kind, data }) {
             back has to name its own tab - a bare "/" made "Back to players"
             land on the alliances list. */}
         <Link
-          href={player ? '/?tab=players' : '/?tab=alliances'}
+          href={backHref}
           className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500 transition hover:text-neutral-100"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -112,19 +121,32 @@ export default function DetailView({ kind, data }) {
                 dates={data.snapshotDates}
                 active={data.snapshotDate}
                 isLatest={data.isLatest}
+                kind="player"
               />
             </div>
           </div>
         ) : (
           <div className="border-b border-gray-800 px-4 py-4">
-            <div className="flex items-center gap-3">
-              <Shield className="h-5 w-5 text-gray-400" />
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
-                  {t('roster.alliance')}
-                </p>
-                <h1 className="text-lg font-semibold text-neutral-100">{data.name}</h1>
+            {/* The same date control the player header carries: an alliance
+                opened at a pinned snapshot says so here and can switch dates
+                in place, on its own alliance route. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Shield className="h-5 w-5 shrink-0 text-gray-400" />
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
+                    {t('roster.alliance')}
+                  </p>
+                  <h1 className="truncate text-lg font-semibold text-neutral-100">{data.name}</h1>
+                </div>
               </div>
+              <SnapshotPicker
+                id={data.id}
+                dates={data.snapshotDates}
+                active={data.snapshotDate}
+                isLatest={data.isLatest}
+                kind="alliance"
+              />
             </div>
           </div>
         )}
@@ -227,7 +249,7 @@ export default function DetailView({ kind, data }) {
           />
         )}
 
-        {!player && <MemberList players={data.players} />}
+        {!player && <MemberList players={data.players} linkDate={data.snapshotDate} />}
       </div>
     </div>
   );
