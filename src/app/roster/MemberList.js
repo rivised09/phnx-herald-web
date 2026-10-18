@@ -13,10 +13,15 @@ const PER_PAGE = 10;
  * does not turn its own page into a wall of names. The index is clamped while
  * rendering, so a shorter member list can never leave the window pointing past
  * the end.
+ *
+ * `linkDate` keeps a member click on the snapshot the alliance page is
+ * reading: opened from an archived date, the profile lands on that same date
+ * instead of jumping back to the newest one.
  */
-export default function MemberList({ players = [] }) {
+export default function MemberList({ players = [], linkDate = null }) {
   const t = useT();
   const [page, setPage] = useState(0);
+  const dateQuery = linkDate ? `?date=${encodeURIComponent(linkDate)}` : '';
 
   const total = players.length;
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -47,7 +52,7 @@ export default function MemberList({ players = [] }) {
         {slice.map((item) => (
           <Link
             key={item.id}
-            href={`/roster/player/${item.id}`}
+            href={`/roster/player/${item.id}${dateQuery}`}
             className="flex items-center justify-between px-4 py-2.5 text-sm transition hover:bg-gray-500/5"
           >
             <span className="min-w-0 truncate text-neutral-100">{item.name}</span>

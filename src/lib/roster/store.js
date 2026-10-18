@@ -347,7 +347,7 @@ export async function getLeadershipDashboard() {
   };
 }
 
-export async function getStoredRoster() {
+export async function getStoredRoster({ date = null } = {}) {
   let number;
   let url;
   try {
@@ -367,12 +367,34 @@ export async function getStoredRoster() {
     );
   }
 
-  const snapshot = await prisma.rosterSnapshot.findFirst({
-    // An unverified read may contain the source homepage shell rather than
-    // roster data. Never let it replace the newest complete database snapshot
-    // on the public page.
+  // The complete dates list doubles as the snapshot selector's options and
+  // as the check a pinned ?date= is measured against. An absent or unknown
+  // date means the newest snapshot, the same way an outlived detail link
+  // reads the newest profile rather than 404ing.
+  const storedDates = await prisma.rosterSnapshot.findMany({
     where: { serverId: server.id, status: 'COMPLETE' },
     orderBy: { snapshotDate: 'desc' },
+    select: { snapshotDate: true },
+  });
+  const snapshotDates = [];
+  for (const item of storedDates) {
+    const iso = isoDay(item.snapshotDate);
+    if (snapshotDates[snapshotDates.length - 1] !== iso) snapshotDates.push(iso);
+  }
+  if (!snapshotDates.length) {
+    return failure('awaiting_sync', `Server ${number} has no snapshots yet.`);
+  }
+  const requested = snapshotDateParam(date);
+  const wanted = requested && snapshotDates.includes(requested) ? requested : snapshotDates[0];
+
+  const snapshot = await prisma.rosterSnapshot.findFirst({
+    // An unverified read may contain the source homepage shell rather than
+    // roster data. Never let it replace a complete database snapshot on the
+    // public page. A pinned date reads that day's snapshot instead of the
+    // newest, and the most recent ingest of the day wins when a date was
+    // crawled twice.
+    where: { serverId: server.id, status: 'COMPLETE', snapshotDate: dayStart(wanted) },
+    orderBy: { createdAt: 'desc' },
     include: {
       allianceRows: { include: { alliance: true } },
       lordRows: { include: { lord: true, alliance: true } },
@@ -460,9 +482,12 @@ export async function getStoredRoster() {
     players,
     crawledAt: new Date(snapshot.updatedAt).toISOString(),
     snapshot: {
-      date: new Date(snapshot.snapshotDate).toISOString().slice(0, 10),
+      // The resolved date: what was pinned in the URL, or the newest when
+      // nothing was - the day all the rows above were read from.
+      date: wanted,
       ingestedAt: new Date(snapshot.createdAt).toISOString(),
       staleDays,
+      dates: snapshotDates,
     },
     guild: null,
   };
@@ -775,23 +800,41 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
 }
 
 /**
- * An alliance's newest stored figures and the members in them.
+ * An alliance's stored figures at one date, and the members in them.
  *
- * The alliance, its latest row and the server they belong to collapse into one
- * read: the relation filters do the scoping that three separate lookups used to
- * do, so an alliance from another server or one with no stored snapshot simply
- * finds nothing and answers 404 like before. Only the member list still needs
- * its own round trip, and it has to wait for the row it hangs off.
+ * The alliance, its row for the wanted date and the server they belong to
+ * collapse into one read: the relation filters do the scoping that three
+ * separate lookups used to do, so an alliance from another server or one with
+ * no stored snapshot simply finds nothing and answers 404 like before. The
+ * date list comes first - it is what the detail's picker offers and what a
+ * requested ?date= is checked against, an unknown one falling back to the
+ * newest date rather than 404ing, exactly like the player profile does. Only
+ * the member list still needs its own round trip, and it waits for the row it
+ * hangs off.
  */
-export async function getAllianceDetail(id) {
-  const row = await prisma.allianceSnapshot.findFirst({
-    where: {
-      allianceId: id,
-      alliance: { server: { serverNumber: Number(serverId()) } },
-      snapshot: { status: 'COMPLETE' },
-    },
-    include: { alliance: true, snapshot: true },
+export async function getAllianceDetail(id, { date = null } = {}) {
+  const scope = {
+    allianceId: id,
+    alliance: { server: { serverNumber: Number(serverId()) } },
+  };
+  const requested = snapshotDateParam(date);
+
+  const dated = await prisma.allianceSnapshot.findMany({
+    where: { ...scope, snapshot: { status: 'COMPLETE' } },
+    select: { snapshot: { select: { snapshotDate: true } } },
     orderBy: { snapshot: { snapshotDate: 'desc' } },
+  });
+  const snapshotDates = [];
+  for (const item of dated) {
+    const iso = isoDay(item.snapshot.snapshotDate);
+    if (snapshotDates[snapshotDates.length - 1] !== iso) snapshotDates.push(iso);
+  }
+  if (!snapshotDates.length) return null;
+
+  const wanted = requested && snapshotDates.includes(requested) ? requested : snapshotDates[0];
+  const row = await prisma.allianceSnapshot.findFirst({
+    where: { ...scope, snapshot: { status: 'COMPLETE', snapshotDate: dayStart(wanted) } },
+    include: { alliance: true, snapshot: true },
   });
   if (!row) return null;
 
@@ -807,7 +850,10 @@ export async function getAllianceDetail(id) {
     rank: row.rank || null,
     power: formatStat(row.power),
     memberCount: row.memberCount || members.length,
-    snapshotDate: snapshot.snapshotDate.toISOString().slice(0, 10),
+    snapshotDate: wanted,
+    snapshotDates,
+    requestedDate: requested,
+    isLatest: wanted === snapshotDates[0],
     players: members.map((item) => ({
       id: item.lord.sourceId.toString(),
       name: item.lord.name,

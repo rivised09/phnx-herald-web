@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Database, KeyRound, Radio, ServerCrash } from 'lucide-react';
 import RosterSearch from './RosterSearch';
 import RosterSection from './RosterSection';
 import RosterTabs from './RosterTabs';
 import MeritFilter from './MeritFilter';
+import SnapshotFilter from './SnapshotFilter';
 import ServerStats from './ServerStats';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
 import { buildSuggestions } from './suggestions';
@@ -63,7 +64,15 @@ const STATUS_COPY = {
   unavailable: { title: 'home.unavailable.title', tone: 'error' },
 };
 
-export default function Home({ data, loading, error, onRetry }) {
+export default function Home({
+  data,
+  loading,
+  pending = false,
+  error,
+  snapshotDate,
+  onSnapshotChange,
+  onRetry,
+}) {
   // Hooks come first: the loading and error paths below return early, and a
   // hook declared after them would run on some renders and not others.
   const [query, setQuery] = useState('');
@@ -77,6 +86,39 @@ export default function Home({ data, loading, error, onRetry }) {
     () => buildSuggestions(alliances, players, query),
     [alliances, players, query],
   );
+
+  // Every stored date for the server, newest first. An older cached payload
+  // without the full list degrades to the one date it does carry, which hides
+  // the selector rather than misfiling it.
+  const snapshotDates = useMemo(() => {
+    const dates = data?.snapshot?.dates;
+    if (Array.isArray(dates) && dates.length) return dates;
+    return data?.snapshot?.date ? [data.snapshot.date] : [];
+  }, [data]);
+
+  // A pinned ?date= in the page URL is re-adopted whenever fresh data lands,
+  // so a reload - or the way back from a detail page - keeps the pick and the
+  // parent re-reads that snapshot's rows. Only a date still in the list is
+  // adopted; a stale URL falls back to newest.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('date');
+    if (wanted && /^\d{4}-\d{2}-\d{2}$/.test(wanted) && snapshotDates.includes(wanted)) {
+      onSnapshotChange(wanted);
+    }
+  }, [snapshotDates, onSnapshotChange]);
+
+  // Picking the newest date drops the pin again: default and explicitly-newest
+  // are the same read and the row links stay clean when nothing was
+  // overridden. Every pick is mirrored into ?date= so it outlives a reload,
+  // and the parent re-reads the roster for the chosen snapshot.
+  const latestDate = snapshotDates[0] || null;
+  const pickSnapshot = (next) => {
+    onSnapshotChange(next === latestDate ? '' : next);
+    const url = new URL(window.location.href);
+    if (next && next !== latestDate) url.searchParams.set('date', next);
+    else url.searchParams.delete('date');
+    window.history.replaceState(window.history.state, '', url);
+  };
 
   // A merit selection reorders the players tab by the total of the chosen
   // troop types (All = all four); with nothing selected the stored power-rank
@@ -99,6 +141,10 @@ export default function Home({ data, loading, error, onRetry }) {
   const copy = STATUS_COPY[status];
   const total = alliances.length + players.length;
   const stale = data.snapshot?.staleDays > 2;
+  // The stale banner is about the NEWEST snapshot being behind. A pinned date
+  // is a deliberate pick, so it gets the archived badge on the selector
+  // instead of a warning that would mislabel its date as the latest one.
+  const viewingLatest = !snapshotDates.length || data.snapshot?.date === snapshotDates[0];
 
   // Counts are pre-formatted here so the message can order them per language.
   const alliancesWord = t(alliances.length === 1 ? 'home.allianceOne' : 'home.allianceMany');
@@ -116,9 +162,11 @@ export default function Home({ data, loading, error, onRetry }) {
         </Notice>
       )}
 
-      {/* A usable roster can still carry a caveat, such as a crawl that hit its
-          alliance cap. Surface it without reading as a failure. */}
-      {status === 'ok' && data.detail && (
+      {/* A usable roster can still carry a caveat, such as a crawl that hit
+          its alliance cap. Surface it without reading as a failure - but only
+          while the newest snapshot is on screen: a pinned date is a deliberate
+          pick, already labelled by the archived badge on the selector. */}
+      {status === 'ok' && data.detail && viewingLatest && (
         <Notice
           tone="warn"
           icon={AlertTriangle}
@@ -135,8 +183,15 @@ export default function Home({ data, loading, error, onRetry }) {
       )}
 
       {status === 'ok' && total > 0 && (
-        <div className="space-y-2">
-          {/* Search on the left, merit filters on the right of the same row. */}
+        // While the pinned snapshot is still being read, the rows already on
+        // screen stay up at reduced opacity rather than collapsing into a
+        // spinner: they are still true data, just about to be replaced.
+        <div
+          className={`space-y-2 transition-opacity ${pending ? 'opacity-60' : ''}`}
+          aria-busy={pending}
+        >
+          {/* Search on the left; the snapshot selector and the merit filters
+              share the right of the same row. */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <RosterSearch
               value={query}
@@ -150,22 +205,33 @@ export default function Home({ data, loading, error, onRetry }) {
               noMatchesLabel={t('search.noMatches', { q: query.trim() })}
               kindLabels={{ alliance: t('search.kindAlliance'), lord: t('search.kindLord') }}
             />
-            <MeritFilter
-              value={meritTypes}
-              onChange={setMeritTypes}
-              order={meritOrder}
-              onOrderChange={setMeritOrder}
-              label={t('filter.merit')}
-              allLabel={t('unit.all')}
-              typeLabels={{
-                infantry: t('unit.infantry'),
-                cavalry: t('unit.cavalry'),
-                marksman: t('unit.marksman'),
-                mage: t('unit.mage'),
-              }}
-              descLabel={t('sort.desc')}
-              ascLabel={t('sort.asc')}
-            />
+            <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+              <SnapshotFilter
+                dates={snapshotDates}
+                value={snapshotDate}
+                onChange={pickSnapshot}
+                label={t('roster.snapshot')}
+                ariaLabel={t('roster.snapshotDateAria')}
+                latestLabel={(date) => t('roster.latest', { date })}
+                archivedLabel={latestDate ? t('roster.archived', { latest: latestDate }) : null}
+              />
+              <MeritFilter
+                value={meritTypes}
+                onChange={setMeritTypes}
+                order={meritOrder}
+                onOrderChange={setMeritOrder}
+                label={t('filter.merit')}
+                allLabel={t('unit.all')}
+                typeLabels={{
+                  infantry: t('unit.infantry'),
+                  cavalry: t('unit.cavalry'),
+                  marksman: t('unit.marksman'),
+                  mage: t('unit.mage'),
+                }}
+                descLabel={t('sort.desc')}
+                ascLabel={t('sort.asc')}
+              />
+            </div>
           </div>
 
           <RosterTabs
@@ -185,6 +251,7 @@ export default function Home({ data, loading, error, onRetry }) {
                     emptyLabel={t('home.emptyAlliances')}
                     showHeader={false}
                     framed={false}
+                    linkDate={snapshotDate || null}
                   />
                 ),
               },
@@ -204,6 +271,7 @@ export default function Home({ data, loading, error, onRetry }) {
                     emptyLabel={t('home.emptyPlayers')}
                     showHeader={false}
                     framed={false}
+                    linkDate={snapshotDate || null}
                     meritLabels={{
                       infantry: t('unit.infantry'),
                       cavalry: t('unit.cavalry'),

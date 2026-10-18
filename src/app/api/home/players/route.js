@@ -18,10 +18,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const refresh = searchParams.get('refresh') === '1';
+  // The snapshot the list is read for; the readers validate the raw value
+  // themselves and fall back to the newest one when it is malformed.
+  const date = searchParams.get('date');
 
   try {
     if (refresh) revalidateTag('roster');
-    const body = refresh ? await getStoredRoster() : await readHomeRoster();
+    const body = refresh ? await getStoredRoster({ date }) : await readHomeRoster(date);
 
     // A roster payload always carries `status`. Anything else - a read that
     // failed part way, or a shape that never made it to the client - is shown

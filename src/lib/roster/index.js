@@ -27,10 +27,16 @@ const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 const LORD_ID = /^\d+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const readHomeRoster = unstable_cache(getStoredRoster, ['roster:home'], {
+const readHomeLatest = unstable_cache(() => getStoredRoster(), ['roster:home'], {
   revalidate: LATEST_TTL,
   tags: ['roster'],
 });
+
+const readHomeDated = unstable_cache(
+  (iso) => getStoredRoster({ date: iso }),
+  ['roster:home:dated'],
+  { revalidate: PINNED_TTL, tags: ['roster'] },
+);
 
 const readPlayerLatest = unstable_cache(
   (id) => getPlayerDetail(id),
@@ -49,13 +55,32 @@ const readLeadership = unstable_cache(getLeadershipDashboard, ['roster:leadershi
   tags: ['roster'],
 });
 
-const readAllianceCached = unstable_cache(
+const readAllianceLatest = unstable_cache(
   (id) => getAllianceDetail(id),
   ['roster:alliance'],
   { revalidate: LATEST_TTL, tags: ['roster'] },
 );
 
-export { readHomeRoster };
+const readAllianceDated = unstable_cache(
+  (id, iso) => getAllianceDetail(id, { date: iso }),
+  ['roster:alliance:dated'],
+  { revalidate: PINNED_TTL, tags: ['roster'] },
+);
+
+/**
+ * The home roster at one date, or at the newest snapshot.
+ *
+ * A pinned date carries the same payload shape as the newest one - same rows,
+ * same format, only read from another immutable snapshot - so the client
+ * swaps it in without having to know which date it got. Pinned reads cache
+ * like a pinned detail page: for an hour, because the date can never change
+ * underneath them; the newest keeps its minutes.
+ */
+export function readHomeRoster(date) {
+  const iso = date && DATE_PARAM.test(String(date)) ? String(date) : null;
+  return iso ? readHomeDated(iso) : readHomeLatest();
+}
+
 export { getLeadershipDashboard };
 export { readLeadership };
 
@@ -75,13 +100,16 @@ export async function readPlayer(id, date) {
 }
 
 /**
- * An alliance at its newest snapshot, or null when the id is not one.
+ * An alliance at one date or at its newest snapshot, or null when the id is
+ * not one. Date and id are validated the same way the player read validates
+ * them, for the same reasons.
  *
  * The store keys alliances on their UUID, and the query rejects anything else
  * as an invalid value - a 500 - where a stranger's URL should read as a miss.
  */
-export async function readAlliance(id) {
+export async function readAlliance(id, date) {
   const key = String(id ?? '');
   if (!UUID.test(key)) return null;
-  return readAllianceCached(key);
+  const iso = date && DATE_PARAM.test(String(date)) ? String(date) : null;
+  return iso ? readAllianceDated(key, iso) : readAllianceLatest(key);
 }
