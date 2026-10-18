@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'chiến đấu',
   'cov.sustain': 'sustain',
   'cov.gathering': 'thu thập',
+  'filter.merit': 'Công trạng',
+  'unit.all': 'Tất cả',
+  'unit.infantry': 'Bộ binh',
+  'unit.cavalry': 'Kỵ binh',
+  'unit.marksman': 'Xạ thủ',
+  'unit.mage': 'Pháp sư',
+  'sort.desc': 'Cao đến thấp',
+  'sort.asc': 'Thấp đến cao',
 };

@@ -5,6 +5,7 @@ import { AlertTriangle, Database, KeyRound, Radio, ServerCrash } from 'lucide-re
 import RosterSearch from './RosterSearch';
 import RosterSection from './RosterSection';
 import RosterTabs from './RosterTabs';
+import MeritFilter from './MeritFilter';
 import ServerStats from './ServerStats';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
 import { buildSuggestions } from './suggestions';
@@ -66,6 +67,8 @@ export default function Home({ data, loading, error, onRetry }) {
   // Hooks come first: the loading and error paths below return early, and a
   // hook declared after them would run on some renders and not others.
   const [query, setQuery] = useState('');
+  const [meritTypes, setMeritTypes] = useState([]);
+  const [meritOrder, setMeritOrder] = useState('desc');
   const t = useT();
 
   const alliances = data?.alliances || [];
@@ -74,6 +77,20 @@ export default function Home({ data, loading, error, onRetry }) {
     () => buildSuggestions(alliances, players, query),
     [alliances, players, query],
   );
+
+  // A merit selection reorders the players tab by the total of the chosen
+  // troop types (All = all four); with nothing selected the stored power-rank
+  // order stands.
+  const sortedPlayers = useMemo(() => {
+    if (!meritTypes.length) return players;
+    // Comparator reads high-to-low, so ascending flips the sign.
+    const sign = meritOrder === 'asc' ? -1 : 1;
+    const total = (player) =>
+      meritTypes.reduce((sum, key) => sum + (Number(player.merits?.[key]) || 0), 0);
+    return players
+      .slice()
+      .sort((a, b) => sign * (total(b) - total(a)));
+  }, [players, meritTypes, meritOrder]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorNotice error={error} />;
@@ -119,18 +136,37 @@ export default function Home({ data, loading, error, onRetry }) {
 
       {status === 'ok' && total > 0 && (
         <div className="space-y-2">
-          <RosterSearch
-            value={query}
-            onChange={setQuery}
-            suggestions={suggestions}
-            label={t('search.label')}
-            placeholder={t('search.placeholder')}
-            clearLabel={t('search.clear')}
-            listLabel={t('search.list')}
-            loadingLabel={t('search.loading')}
-            noMatchesLabel={t('search.noMatches', { q: query.trim() })}
-            kindLabels={{ alliance: t('search.kindAlliance'), lord: t('search.kindLord') }}
-          />
+          {/* Search on the left, merit filters on the right of the same row. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <RosterSearch
+              value={query}
+              onChange={setQuery}
+              suggestions={suggestions}
+              label={t('search.label')}
+              placeholder={t('search.placeholder')}
+              clearLabel={t('search.clear')}
+              listLabel={t('search.list')}
+              loadingLabel={t('search.loading')}
+              noMatchesLabel={t('search.noMatches', { q: query.trim() })}
+              kindLabels={{ alliance: t('search.kindAlliance'), lord: t('search.kindLord') }}
+            />
+            <MeritFilter
+              value={meritTypes}
+              onChange={setMeritTypes}
+              order={meritOrder}
+              onOrderChange={setMeritOrder}
+              label={t('filter.merit')}
+              allLabel={t('unit.all')}
+              typeLabels={{
+                infantry: t('unit.infantry'),
+                cavalry: t('unit.cavalry'),
+                marksman: t('unit.marksman'),
+                mage: t('unit.mage'),
+              }}
+              descLabel={t('sort.desc')}
+              ascLabel={t('sort.asc')}
+            />
+          </div>
 
           <RosterTabs
             tabs={[
@@ -159,12 +195,21 @@ export default function Home({ data, loading, error, onRetry }) {
                 count: players.length,
                 panel: (
                   <RosterSection
-                    key="players"
-                    items={players}
+                    // Keyed per filter combination too, so changing the merit
+                    // filter starts the list back at its first page instead of
+                    // keeping a page index meant for another ordering.
+                    key={`players-${[...meritTypes].sort().join('-')}-${meritOrder}`}
+                    items={sortedPlayers}
                     perPage={10}
                     emptyLabel={t('home.emptyPlayers')}
                     showHeader={false}
                     framed={false}
+                    meritLabels={{
+                      infantry: t('unit.infantry'),
+                      cavalry: t('unit.cavalry'),
+                      marksman: t('unit.marksman'),
+                      mage: t('unit.mage'),
+                    }}
                   />
                 ),
               },

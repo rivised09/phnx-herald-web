@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'labanan',
   'cov.sustain': 'pagtitiyaga',
   'cov.gathering': 'pag-ipon',
+  'filter.merit': 'Merito',
+  'unit.all': 'Lahat',
+  'unit.infantry': 'Impanteriya',
+  'unit.cavalry': 'Kabalyeriya',
+  'unit.marksman': 'Mamamaril',
+  'unit.mage': 'Mangkukulam',
+  'sort.desc': 'Pinakamataas muna',
+  'sort.asc': 'Pinakamababa muna',
 };

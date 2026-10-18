@@ -53,6 +53,18 @@ function failure(status, detail) {
  */
 const PLACEHOLDER_AVATAR = /codweb_all_three_avatar|\/static\/images\//;
 
+/**
+ * The four troop-type merit counts the source prints under "Advanced War
+ * Stats" for every player. The labels are fixed game vocabulary (the source's
+ * "archer" is called Marksman), so they are keyed here rather than discovered.
+ */
+const MERIT_LABELS = {
+  'Infantry Merits': 'infantry',
+  'Cavalry Merits': 'cavalry',
+  'Mage Merits': 'mage',
+  'Marksman Merits': 'marksman',
+};
+
 function usableAvatar(value) {
   return value && !PLACEHOLDER_AVATAR.test(value) ? value : null;
 }
@@ -377,10 +389,29 @@ export async function getStoredRoster() {
     (a, b) => (a.rank ?? 0) - (b.rank ?? 0),
   );
   const lordRows = [...snapshot.lordRows].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-  const avatarByLord = await historicalAvatarMap(
-    server.id,
-    lordRows.slice(0, MAX_ROWS).map((row) => row.lordId),
-  );
+  const pageLordIds = lordRows.slice(0, MAX_ROWS).map((row) => row.lordId);
+  const [avatarByLord, meritRows] = await Promise.all([
+    historicalAvatarMap(server.id, pageLordIds),
+    prisma.snapshotMetric.findMany({
+      where: {
+        snapshotId: snapshot.id,
+        subjectType: 'LORD',
+        subjectId: { in: pageLordIds },
+        label: { in: Object.keys(MERIT_LABELS) },
+        section: 'Advanced War Stats',
+      },
+      select: { subjectId: true, label: true, valueNumber: true },
+    }),
+  ]);
+  const meritsByLord = new Map();
+  for (const row of meritRows) {
+    const key = MERIT_LABELS[row.label];
+    if (!key) continue;
+    if (!meritsByLord.has(row.subjectId)) {
+      meritsByLord.set(row.subjectId, { infantry: 0, cavalry: 0, mage: 0, marksman: 0 });
+    }
+    meritsByLord.get(row.subjectId)[key] = row.valueNumber == null ? 0 : Number(row.valueNumber);
+  }
 
   const alliances = allianceRows.slice(0, MAX_ROWS).map((row) => {
     const stats = {};
@@ -407,6 +438,7 @@ export async function getStoredRoster() {
       allianceId: row.alliance ? row.alliance.name : null,
       avatar: usableAvatar(row.avatarUrl) || avatarByLord.get(row.lordId) || null,
       stats,
+      merits: meritsByLord.get(row.lordId) || null,
     };
   });
 

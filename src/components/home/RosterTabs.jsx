@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChartBar, Shield, Users } from 'lucide-react';
 import { useT } from '../i18n/LocaleProvider';
 
@@ -24,6 +24,25 @@ export default function RosterTabs({ tabs = [] }) {
   const current = tabs.find((tab) => tab.key === active) || tabs[0];
   const t = useT();
 
+  // The chosen tab is mirrored into ?tab= so a detail page can be left and
+  // come back to the same list: the link pushes a new history entry, the tab
+  // switch rewrites the current one, and Back therefore restores the tab that
+  // was actually open - players after a player page, alliances after an
+  // alliance page. The URL is adopted after mount, never during the first
+  // render, so the server and the client agree on the initial paint.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    if (wanted && tabs.some((tab) => tab.key === wanted)) setActive(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const choose = (key) => {
+    setActive(key);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', key);
+    window.history.replaceState(window.history.state, '', url);
+  };
+
   if (!current) return null;
 
   return (
@@ -44,7 +63,7 @@ export default function RosterTabs({ tabs = [] }) {
               role="tab"
               aria-selected={selected}
               aria-controls={`roster-panel-${tab.key}`}
-              onClick={() => setActive(tab.key)}
+              onClick={() => choose(tab.key)}
               className={`group inline-flex w-full min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border px-1.5 py-2 font-mono uppercase transition sm:w-auto sm:justify-start sm:gap-2 sm:px-3 ${
                 selected
                   ? 'border-amber-500/50 text-amber-300'

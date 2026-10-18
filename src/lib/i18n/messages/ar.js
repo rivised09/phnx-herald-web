@@ -456,4 +456,12 @@ export default {
   'cov.combat': 'قتال',
   'cov.sustain': 'تحمّل',
   'cov.gathering': 'جمع',
+  'filter.merit': 'الاستحقاق',
+  'unit.all': 'الكل',
+  'unit.infantry': 'المشاة',
+  'unit.cavalry': 'الفرسان',
+  'unit.marksman': 'الرماة',
+  'unit.mage': 'الساحر',
+  'sort.desc': 'الأعلى أولاً',
+  'sort.asc': 'الأدنى أولاً',
 };

@@ -451,4 +451,12 @@ export default {
   'cov.combat': '战斗',
   'cov.sustain': '续航',
   'cov.gathering': '采集',
+  'filter.merit': '功绩',
+  'unit.all': '全部',
+  'unit.infantry': '步兵',
+  'unit.cavalry': '骑兵',
+  'unit.marksman': '神射手',
+  'unit.mage': '法师',
+  'sort.desc': '从高到低',
+  'sort.asc': '从低到高',
 };

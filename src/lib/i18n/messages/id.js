@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'tempur',
   'cov.sustain': 'kelangsungan',
   'cov.gathering': 'pengumpulan',
+  'filter.merit': 'Jasa',
+  'unit.all': 'Semua',
+  'unit.infantry': 'Infantri',
+  'unit.cavalry': 'Kavaleri',
+  'unit.marksman': 'Penembak',
+  'unit.mage': 'Penyihir',
+  'sort.desc': 'Tertinggi dulu',
+  'sort.asc': 'Terendah dulu',
 };

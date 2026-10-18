@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'युद्ध',
   'cov.sustain': 'टिकाव',
   'cov.gathering': 'संग्रह',
+  'filter.merit': 'योग्यता',
+  'unit.all': 'सभी',
+  'unit.infantry': 'पैदल सेना',
+  'unit.cavalry': 'घुड़सवार सेना',
+  'unit.marksman': 'धनुर्धर',
+  'unit.mage': 'जादूगर',
+  'sort.desc': 'पहले अधिक',
+  'sort.asc': 'पहले कम',
 };

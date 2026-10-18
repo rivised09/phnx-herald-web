@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'gevecht',
   'cov.sustain': 'volharding',
   'cov.gathering': 'verzamelen',
+  'filter.merit': 'Verdienste',
+  'unit.all': 'Alle',
+  'unit.infantry': 'Infanterie',
+  'unit.cavalry': 'Cavalerie',
+  'unit.marksman': 'Schutter',
+  'unit.mage': 'Tovenaar',
+  'sort.desc': 'Hoogste eerst',
+  'sort.asc': 'Laagste eerst',
 };
