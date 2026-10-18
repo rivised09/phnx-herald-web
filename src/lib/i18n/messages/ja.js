@@ -456,4 +456,12 @@ export default {
   'cov.combat': '戦闘',
   'cov.sustain': '維持',
   'cov.gathering': '集め',
+  'filter.merit': '功績',
+  'unit.all': 'すべて',
+  'unit.infantry': '歩兵',
+  'unit.cavalry': '騎兵',
+  'unit.marksman': '射撃兵',
+  'unit.mage': '魔導士',
+  'sort.desc': '高い順',
+  'sort.asc': '低い順',
 };

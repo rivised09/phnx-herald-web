@@ -48,8 +48,11 @@ export default function DetailView({ kind, data }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        {/* The homepage defaults to the first tab (alliances), so the way
+            back has to name its own tab - a bare "/" made "Back to players"
+            land on the alliances list. */}
         <Link
-          href="/"
+          href={player ? '/?tab=players' : '/?tab=alliances'}
           className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500 transition hover:text-neutral-100"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

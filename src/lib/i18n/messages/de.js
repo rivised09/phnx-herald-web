@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'Kampf',
   'cov.sustain': 'Erhalt',
   'cov.gathering': 'Sammeln',
+  'filter.merit': 'Verdienst',
+  'unit.all': 'Alle',
+  'unit.infantry': 'Infanterie',
+  'unit.cavalry': 'Kavallerie',
+  'unit.marksman': 'Schütze',
+  'unit.mage': 'Magier',
+  'sort.desc': 'Höchste zuerst',
+  'sort.asc': 'Niedrigste zuerst',
 };

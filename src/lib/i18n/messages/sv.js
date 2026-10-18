@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'strid',
   'cov.sustain': 'utstånd',
   'cov.gathering': 'insamling',
+  'filter.merit': 'Förtjänst',
+  'unit.all': 'Alla',
+  'unit.infantry': 'Infanteri',
+  'unit.cavalry': 'Kavalleri',
+  'unit.marksman': 'Skytt',
+  'unit.mage': 'Magiker',
+  'sort.desc': 'Högst först',
+  'sort.asc': 'Lägst först',
 };

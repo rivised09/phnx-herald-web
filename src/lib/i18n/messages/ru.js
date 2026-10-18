@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'бой',
   'cov.sustain': 'выживаемость',
   'cov.gathering': 'добыча',
+  'filter.merit': 'Заслуга',
+  'unit.all': 'Все',
+  'unit.infantry': 'Пехота',
+  'unit.cavalry': 'Кавалерия',
+  'unit.marksman': 'Стрелок',
+  'unit.mage': 'Маг',
+  'sort.desc': 'По убыванию',
+  'sort.asc': 'По возрастанию',
 };

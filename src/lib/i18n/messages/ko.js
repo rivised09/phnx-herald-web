@@ -456,4 +456,12 @@ export default {
   'cov.combat': '전투',
   'cov.sustain': '지속',
   'cov.gathering': '채집',
+  'filter.merit': '공적',
+  'unit.all': '전체',
+  'unit.infantry': '보병',
+  'unit.cavalry': '기병',
+  'unit.marksman': '명사수',
+  'unit.mage': '마법사',
+  'sort.desc': '높은 순',
+  'sort.asc': '낮은 순',
 };

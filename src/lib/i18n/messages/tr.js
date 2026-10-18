@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'savaş',
   'cov.sustain': 'ayakta kalma',
   'cov.gathering': 'toplama',
+  'filter.merit': 'Başarı',
+  'unit.all': 'Tümü',
+  'unit.infantry': 'Piyade',
+  'unit.cavalry': 'Süvari',
+  'unit.marksman': 'Nişancı',
+  'unit.mage': 'Büyücü',
+  'sort.desc': 'Çoktan aza',
+  'sort.asc': 'Azdan çoğa',
 };

@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'combate',
   'cov.sustain': 'sostenimiento',
   'cov.gathering': 'recolección',
+  'filter.merit': 'Mérito',
+  'unit.all': 'Todos',
+  'unit.infantry': 'Infantería',
+  'unit.cavalry': 'Caballería',
+  'unit.marksman': 'Tirador',
+  'unit.mage': 'Mago',
+  'sort.desc': 'Mayor primero',
+  'sort.asc': 'Menor primero',
 };

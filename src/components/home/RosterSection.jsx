@@ -26,6 +26,7 @@ export default function RosterSection({
   itemType = 'player',
   showHeader = true,
   framed = true,
+  meritLabels = null,
 }) {
   const [page, setPage] = useState(0);
   const t = useT();
@@ -70,6 +71,7 @@ export default function RosterSection({
           // Known stat keys are translated; anything new falls back to the
           // humanized source key, which stays readable English.
           statLabel={(key) => t(`stat.${String(key).toLowerCase()}`, undefined, '') || humanize(key)}
+          meritLabels={meritLabels}
         />
         <div className="border-t border-gray-800">
           <Pagination

@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'walka',
   'cov.sustain': 'przetrwanie',
   'cov.gathering': 'zbieractwo',
+  'filter.merit': 'Zasługi',
+  'unit.all': 'Wszystkie',
+  'unit.infantry': 'Piechota',
+  'unit.cavalry': 'Kawaleria',
+  'unit.marksman': 'Strzelec',
+  'unit.mage': 'Mag',
+  'sort.desc': 'Malejąco',
+  'sort.asc': 'Rosnąco',
 };

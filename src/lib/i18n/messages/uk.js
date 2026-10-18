@@ -457,4 +457,12 @@ export default {
   'cov.combat': 'бій',
   'cov.sustain': 'витривалість',
   'cov.gathering': 'збирання',
+  'filter.merit': 'Заслуга',
+  'unit.all': 'Усі',
+  'unit.infantry': 'Піхота',
+  'unit.cavalry': 'Кавалерія',
+  'unit.marksman': 'Стрілок',
+  'unit.mage': 'Маг',
+  'sort.desc': 'За спаданням',
+  'sort.asc': 'За зростанням',
 };

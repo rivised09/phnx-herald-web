@@ -475,4 +475,12 @@ export default {
   'cov.combat': 'combat',
   'cov.sustain': 'sustain',
   'cov.gathering': 'gathering',
+  'filter.merit': 'Merit',
+  'unit.all': 'All',
+  'unit.infantry': 'Infantry',
+  'unit.cavalry': 'Cavalry',
+  'unit.marksman': 'Marksman',
+  'unit.mage': 'Mage',
+  'sort.desc': 'Highest first',
+  'sort.asc': 'Lowest first',
 };

@@ -1,6 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import TroopIcon from './TroopIcons';
+
+// Source order: the four troop types as the stats site lists them.
+const MERIT_ORDER = ['infantry', 'cavalry', 'marksman', 'mage'];
 
 function humanize(key) {
   return String(key)
@@ -45,6 +49,7 @@ export default function PlayerRoster({
   itemType = 'player',
   noStatsLabel = 'No stats yet',
   statLabel = null,
+  meritLabels = null,
 }) {
   if (!players?.length) return null;
 
@@ -57,8 +62,13 @@ export default function PlayerRoster({
       {players.map((player) => {
         const stats = Object.entries(player.stats || {});
 
+        // Alternating stripes: odd rows darker, even rows a shade lighter
+        // over the panel surface; hover still trumps both.
         return (
-          <li key={player.id} className="transition hover:bg-gray-500/5">
+          <li
+            key={player.id}
+            className="transition odd:bg-black/30 even:bg-white/[0.02] hover:bg-gray-500/5"
+          >
             {/* The whole row is the link, so a thumb landing anywhere on a
                 roster row still opens it. */}
             <Link
@@ -86,28 +96,73 @@ export default function PlayerRoster({
                   />
                 )}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-neutral-100">
-                {player.name}
-              </span>
+              <div className="min-w-0 flex-1">
+                {/* Line one: the name with rank and power on its right edge. */}
+                <div className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 truncate text-xs text-neutral-100">
+                    {player.name}
+                  </span>
 
-              {stats.length === 0 ? (
-                <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-gray-600">
-                  {noStatsLabel}
-                </span>
-              ) : (
-                <dl className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 sm:gap-x-4">
-                  {stats.map(([key, value]) => (
-                    <div key={key} className="flex items-baseline gap-1.5">
-                      <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">
-                        {statLabel ? statLabel(key) : humanize(key)}
-                      </dt>
-                      <dd className="font-mono text-[11px] tabular-nums text-neutral-100">
-                        {String(value)}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
+                  {stats.length === 0 ? (
+                    <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-gray-600">
+                      {noStatsLabel}
+                    </span>
+                  ) : (
+                    <dl className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 sm:gap-x-4">
+                      {stats.map(([key, value]) => (
+                        <div key={key} className="flex items-baseline gap-1.5">
+                          <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">
+                            {statLabel ? statLabel(key) : humanize(key)}
+                          </dt>
+                          <dd className="font-mono text-[11px] tabular-nums text-neutral-100">
+                            {String(value)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+
+                {/* Line two: a dashed rule under the name, then the four
+                    troop types in equal columns - four across from sm up,
+                    two per row on phones with a hairline between the rows.
+                    Players without stored merits (older payloads,
+                    alliances) show none of it. */}
+                {player.merits && (
+                  <div className="mt-2 border-t border-dashed border-gray-700/70 pt-1.5">
+                    <ul className="grid grid-cols-2 sm:grid-cols-4">
+                      {MERIT_ORDER.map((key, index) => {
+                        const count = Number(player.merits[key]) || 0;
+                        const title = meritLabels?.[key] || key;
+                        return (
+                          <li
+                            key={key}
+                            title={`${title}: ${count.toLocaleString()}`}
+                            className={[
+                              'flex items-center gap-1.5 border-gray-800/80 py-1.5',
+                              // Column rules: between the two phone columns
+                              // (indices 1 and 3); from sm up the grid is one
+                              // row of four, so index 2 joins in as well.
+                              index === 1 || index === 3
+                                ? 'border-l pl-2'
+                                : index === 2
+                                  ? 'sm:border-l sm:pl-2'
+                                  : '',
+                              // Phone-only rule between the two merit rows.
+                              index >= 2 ? 'border-t sm:border-t-0' : '',
+                            ].join(' ')}
+                          >
+                            <TroopIcon type={key} className="h-3.5 w-3.5 shrink-0 text-white" />
+                            <span className="font-mono text-[10px] tabular-nums text-gray-300">
+                              {count.toLocaleString()}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </Link>
           </li>
         );

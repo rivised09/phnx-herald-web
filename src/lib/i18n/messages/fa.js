@@ -456,4 +456,12 @@ export default {
   'cov.combat': 'رزم',
   'cov.sustain': 'دوام',
   'cov.gathering': 'جمع‌آوری',
+  'filter.merit': 'شایستگی',
+  'unit.all': 'همه',
+  'unit.infantry': 'پیاده‌نظام',
+  'unit.cavalry': 'سواره‌نظام',
+  'unit.marksman': 'تیرانداز',
+  'unit.mage': 'جادوگر',
+  'sort.desc': 'بیشترین اول',
+  'sort.asc': 'کمترین اول',
 };

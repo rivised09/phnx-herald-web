@@ -456,4 +456,12 @@ export default {
   'cov.combat': 'การรบ',
   'cov.sustain': 'ความทนทาน',
   'cov.gathering': 'การเก็บรวบรวม',
+  'filter.merit': 'ความดีความชอบ',
+  'unit.all': 'ทั้งหมด',
+  'unit.infantry': 'ทหารราบ',
+  'unit.cavalry': 'ทหารม้า',
+  'unit.marksman': 'พลธนู',
+  'unit.mage': 'นักเวทย์',
+  'sort.desc': 'มากไปน้อย',
+  'sort.asc': 'น้อยไปมาก',
 };
