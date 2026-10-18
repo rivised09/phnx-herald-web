@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Bu ittifaklar için oyuncu bulunamadı.',
 
   'search.label': 'İttifak ve lord ara',
-  'search.placeholder': 'İttifak ve lord ara…',
+  'search.placeholder': 'İttifak, lord veya oyuncu ID ara…',
   'search.clear': 'Aramayı temizle',
   'search.kindAlliance': 'İttifak',
   'search.kindLord': 'Lord',

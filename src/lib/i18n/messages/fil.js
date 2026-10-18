@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Walang nahanap na manlalaro para sa mga alliance na ito.',
 
   'search.label': 'Maghanap ng alliance at lord',
-  'search.placeholder': 'Maghanap ng alliance at lord…',
+  'search.placeholder': 'Maghanap ng alliance, lord, o player ID…',
   'search.clear': 'I-clear ang paghahanap',
   'search.kindAlliance': 'Alliance',
   'search.kindLord': 'Lord',

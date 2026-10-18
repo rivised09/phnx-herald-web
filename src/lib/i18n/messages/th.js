@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'ไม่พบผู้เล่นสำหรับกิลด์เหล่านี้',
 
   'search.label': 'ค้นหากิลด์และลอร์ด',
-  'search.placeholder': 'ค้นหากิลด์และลอร์ด…',
+  'search.placeholder': 'ค้นหากิลด์ ลอร์ด หรือ ID ผู้เล่น…',
   'search.clear': 'ล้างการค้นหา',
   'search.kindAlliance': 'กิลด์',
   'search.kindLord': 'ลอร์ด',

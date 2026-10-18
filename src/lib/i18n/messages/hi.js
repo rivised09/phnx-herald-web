@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'इन गठबंधनों के लिए कोई खिलाड़ी नहीं मिला।',
 
   'search.label': 'गठबंधन और लॉर्ड खोजें',
-  'search.placeholder': 'गठबंधन और लॉर्ड खोजें…',
+  'search.placeholder': 'गठबंधन, लॉर्ड या खिलाड़ी ID खोजें…',
   'search.clear': 'खोज साफ़ करें',
   'search.kindAlliance': 'गठबंधन',
   'search.kindLord': 'लॉर्ड',

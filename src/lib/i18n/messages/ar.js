@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'لم يتم العثور على لاعبين لهذه التحالفات.',
 
   'search.label': 'ابحث عن تحالفات ولوردات',
-  'search.placeholder': 'ابحث عن تحالفات ولوردات…',
+  'search.placeholder': 'ابحث عن تحالفات ولوردات أو معرّف اللاعب…',
   'search.clear': 'مسح البحث',
   'search.kindAlliance': 'تحالف',
   'search.kindLord': 'لورد',

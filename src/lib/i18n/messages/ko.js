@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': '이 동맹들에서 플레이어를 찾지 못했습니다.',
 
   'search.label': '동맹과 군주 검색',
-  'search.placeholder': '동맹과 군주 검색…',
+  'search.placeholder': '동맹, 군주 또는 플레이어 ID 검색…',
   'search.clear': '검색 지우기',
   'search.kindAlliance': '동맹',
   'search.kindLord': '군주',

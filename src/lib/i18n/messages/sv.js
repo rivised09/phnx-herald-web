@@ -45,7 +45,7 @@ export default {
   'home.emptyPlayers': 'Inga spelare hittades för dessa allianser.',
 
   'search.label': 'Sök allianser och lords',
-  'search.placeholder': 'Sök allianser och lords…',
+  'search.placeholder': 'Sök allianser, lords eller spelar-ID…',
   'search.clear': 'Rensa sökning',
   'search.kindAlliance': 'Allians',
   'search.kindLord': 'Lord',

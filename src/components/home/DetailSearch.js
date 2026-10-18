@@ -21,7 +21,13 @@ export default function DetailSearch() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/api/home/players')
+    // A detail page can be pinned to a snapshot (?date=): the lookup box
+    // searches that same day's roster, so a player who has since renamed is
+    // still found under - and shown with - the name that snapshot carries.
+    const date = new URLSearchParams(window.location.search).get('date');
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+
+    fetch(`/api/home/players${query}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error('roster'))))
       .then((data) => {
         if (cancelled) return;

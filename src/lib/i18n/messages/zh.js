@@ -42,7 +42,7 @@ export default {
   'home.emptyPlayers': '这些联盟下未找到玩家。',
 
   'search.label': '搜索联盟和领主',
-  'search.placeholder': '搜索联盟和领主…',
+  'search.placeholder': '搜索联盟、领主或玩家ID…',
   'search.clear': '清除搜索',
   'search.kindAlliance': '联盟',
   'search.kindLord': '领主',

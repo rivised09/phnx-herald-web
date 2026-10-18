@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import HomeView from './Home';
 
 /**
@@ -28,6 +28,12 @@ export default function HomeClient({ initialData = null }) {
   // kept in the URL (?date=) by the view, so a reload or a round trip to a
   // detail page re-adopts it after hydration and reads it again here.
   const [snapshotDate, setSnapshotDate] = useState('');
+  // True through the first effect run only: that first paint already carries
+  // the server's read (including a pinned ?date= it rendered into the HTML),
+  // so it only has to fetch when the read came up empty. Every later change -
+  // including clearing the pin back to newest - must read again. Gating on
+  // the empty date alone used to skip that and leave the pinned rows up.
+  const firstEffect = useRef(true);
 
   const load = useCallback(async (iso, force) => {
     setPending(true);
@@ -51,11 +57,11 @@ export default function HomeClient({ initialData = null }) {
     }
   }, []);
 
-  // First paint already carries the server's read (including a pinned ?date=
-  // the server rendered into the HTML), so only ask again when it came up
-  // empty, when the pin moves, or when someone hits the refresh button.
   useEffect(() => {
-    if (nonce === 0 && snapshotDate === '' && initialData) return;
+    if (firstEffect.current) {
+      firstEffect.current = false;
+      if (nonce === 0 && initialData) return;
+    }
     load(snapshotDate, nonce > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nonce, snapshotDate]);
