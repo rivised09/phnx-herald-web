@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { History, Loader2 } from 'lucide-react';
 import { useT } from '../../components/i18n/LocaleProvider';
+import LoadingOverlay from '../../components/LoadingOverlay';
 
 /**
  * Which stored snapshot the profile is reading. The newest one is the default,
@@ -13,9 +14,10 @@ import { useT } from '../../components/i18n/LocaleProvider';
  *
  * The navigation is a server round trip, so the control takes the picked value
  * immediately and runs the route change inside a transition. The select never
- * snaps back to the old date while the new payload is on its way, the spinner
- * says the switch is in flight, and the route's loading skeleton takes over as
- * soon as the new page starts rendering.
+ * snaps back to the old date while the new payload is on its way, and the
+ * centered loading card stands over the page from the pick until the new date
+ * arrives - the route's loading screen keeps the same card up for the rest of
+ * the switch, so one wait reads the same way end to end.
  *
  * `kind` names the detail route the picker sits on (the alliance profile got
  * the same picker as the player one), so a pick stays on its own kind instead
@@ -74,6 +76,13 @@ export default function SnapshotPicker({ id, dates = [], active, isLatest = true
         <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-amber-200">
           {t('roster.archived', { latest })}
         </span>
+      )}
+
+      {/* The pick owns the wait until the new date's page takes over. */}
+      {isPending && (
+        <LoadingOverlay
+          labelKey={kind === 'alliance' ? 'roster.loadingAlliance' : 'roster.loadingPlayer'}
+        />
       )}
     </div>
   );

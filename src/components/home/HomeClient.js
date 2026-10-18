@@ -15,8 +15,8 @@ import HomeView from './Home';
  * snapshot's payload through the same path the refresh button uses, and the
  * payload keeps its shape either way - same rows, same format, another day.
  * While that read is in flight the previous rows stay on screen at reduced
- * opacity (`pending`) instead of collapsing into a spinner: the old snapshot
- * is still true data, just about to be replaced.
+ * opacity (`pending`) beneath a centered loading card instead of collapsing
+ * away: the old snapshot is still true data, just about to be replaced.
  */
 export default function HomeClient({ initialData = null }) {
   const [data, setData] = useState(initialData);
@@ -35,7 +35,13 @@ export default function HomeClient({ initialData = null }) {
   // the empty date alone used to skip that and leave the pinned rows up.
   const firstEffect = useRef(true);
 
+  // Reads carry a sequence number so a slow answer arriving after a newer
+  // pick cannot overwrite it: rapid switching always lands on the last date
+  // chosen, and only the newest read may lower the pending flag.
+  const loadSeq = useRef(0);
+
   const load = useCallback(async (iso, force) => {
+    const seq = ++loadSeq.current;
     setPending(true);
     setError(null);
     try {
@@ -48,12 +54,16 @@ export default function HomeClient({ initialData = null }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || body.error || `Request failed (${res.status})`);
+      if (seq !== loadSeq.current) return;
       setData(body);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err.message);
     } finally {
-      setPending(false);
-      setLoading(false);
+      if (seq === loadSeq.current) {
+        setPending(false);
+        setLoading(false);
+      }
     }
   }, []);
 
