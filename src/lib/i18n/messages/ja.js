@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'プレイヤーセクション',
   'ins.warStats': '戦争統計',
   'ins.merits': '功績',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'あなたの戦闘プロフィール',
   'ins.whatMeans': 'このプロフィールが意味すること',
   'ins.blurbFallback': 'このアカウントのプロフィールは、自身の取得済み数値から読み取られます。',

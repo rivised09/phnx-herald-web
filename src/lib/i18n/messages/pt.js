@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Seções do jogador',
   'ins.warStats': 'Estatísticas de guerra',
   'ins.merits': 'Méritos',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Seu perfil de guerra',
   'ins.whatMeans': 'O que este perfil significa',
   'ins.blurbFallback': 'O perfil desta conta é lido dos próprios números capturados.',

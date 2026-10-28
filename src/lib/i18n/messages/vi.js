@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Phần người chơi',
   'ins.warStats': 'Thống kê chiến tranh',
   'ins.merits': 'Công trạng',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Hồ sơ chiến đấu của bạn',
   'ins.whatMeans': 'Hồ sơ này có ý nghĩa gì',
   'ins.blurbFallback': 'Hồ sơ tài khoản này được đọc từ chính số liệu đã thu thập của nó.',

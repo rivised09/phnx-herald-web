@@ -19,6 +19,10 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: 'Phoenix Herald — Manage Alliance Events',
   description: 'Create, manage, and announce alliance events to Discord.',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+  },
 };
 
 export default async function RootLayout({ children }) {

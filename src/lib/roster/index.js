@@ -1,10 +1,27 @@
 import { unstable_cache } from 'next/cache';
-import {
-  getAllianceDetail,
-  getLeadershipDashboard,
-  getPlayerDetail,
-  getStoredRoster,
-} from './store';
+import * as store from './store';
+import * as files from './files';
+
+/**
+ * Which storage the roster is read from.
+ *
+ * Setting `ROSTER_DATA_BASE_URL` switches the public read path to the JSON
+ * files the bot exports; leaving it unset keeps the Postgres reads. Both
+ * modules return the same payloads, so nothing above this line knows the
+ * difference - which is also what makes the switch reversible during a
+ * migration.
+ */
+const roster = files.filesEnabled() ? files : store;
+
+/**
+ * Re-exported so the refresh route can bypass the cache with the same source
+ * the pages use - refreshing against Postgres while the pages read files (or
+ * the other way round) would publish one and serve the other.
+ */
+export const getStoredRoster = roster.getStoredRoster;
+
+const { getPlayerDetail, getAllianceDetail } = roster;
+const { getLeadershipDashboard } = store;
 
 /**
  * The roster reads behind a small cache, so a page is served from the data

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { readHomeRoster } from '../../../../lib/roster';
-import { getStoredRoster } from '../../../../lib/roster/store';
+import { readHomeRoster, getStoredRoster } from '../../../../lib/roster';
 
 export const dynamic = 'force-dynamic';
 

@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Разделы игрока',
   'ins.warStats': 'Статистика войны',
   'ins.merits': 'Заслуги',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Ваш боевой профиль',
   'ins.whatMeans': 'Что означает этот профиль',
   'ins.blurbFallback': 'Профиль аккаунта составлен по его собственным данным.',

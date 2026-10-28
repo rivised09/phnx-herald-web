@@ -25,7 +25,7 @@ const MAX_ROWS = 500;
  * is converted back into that display form here rather than exposing a raw
  * BigInt, which would also break JSON serialisation.
  */
-function formatStat(value) {
+export function formatStat(value) {
   if (value === null || value === undefined) return null;
   try {
     return BigInt(value).toLocaleString('en-US');
@@ -639,7 +639,7 @@ function metricNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function gatheredSeries(byDate) {
+export function gatheredSeries(byDate) {
   const totals = Object.keys(byDate || {})
     .sort()
     .map((date) => {

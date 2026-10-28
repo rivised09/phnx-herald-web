@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Spelarsektioner',
   'ins.warStats': 'Krigsstatistik',
   'ins.merits': 'Förtjänster',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Din stridsprofil',
   'ins.whatMeans': 'Vad denna profil betyder',
   'ins.blurbFallback': 'Detta kontos profil läses från dess egna insamlade siffror.',

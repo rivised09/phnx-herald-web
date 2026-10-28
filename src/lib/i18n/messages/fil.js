@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Mga seksyon ng manlalaro',
   'ins.warStats': 'Mga istatistika ng digmaan',
   'ins.merits': 'Mga ambag',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Ang profile mo sa digmaan',
   'ins.whatMeans': 'Kahulugan ng profile na ito',
   'ins.blurbFallback': 'Ang profile ng account na ito ay binabasa mula sa sarili nitong mga na-capture na figure.',

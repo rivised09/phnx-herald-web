@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'खिलाड़ी अनुभाग',
   'ins.warStats': 'युद्ध आँकड़े',
   'ins.merits': 'उपलब्धियाँ',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'आपकी युद्ध प्रोफ़ाइल',
   'ins.whatMeans': 'यह प्रोफ़ाइल क्या बताती है',
   'ins.blurbFallback': 'इस खाते की प्रोफ़ाइल उसके अपने कैप्चर किए आँकड़ों से पढ़ी जाती है।',

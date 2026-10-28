@@ -71,6 +71,32 @@ export function startSnapshotFetch(date) {
   });
 }
 
+export function getScrapeState(after = 0) {
+  return request(`/api/scrape?after=${encodeURIComponent(after)}`);
+}
+
+export function getScrapeOptions() {
+  return request('/api/scrape/options');
+}
+
+export function startScrape(payload) {
+  return request('/api/scrape', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function cancelScrape() {
+  return request('/api/scrape', { method: 'DELETE' });
+}
+
+export function importDragonSession(state) {
+  return request('/api/scrape/session', {
+    method: 'POST',
+    body: JSON.stringify(state),
+  });
+}
+
 export function createEvent(payload) {
   return request('/api/events', {
     method: 'POST',

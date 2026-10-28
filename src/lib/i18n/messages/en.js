@@ -125,6 +125,7 @@ export default {
   'ins.sectionsAria': 'Player sections',
   'ins.warStats': 'War Stats',
   'ins.merits': 'Merits',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Your war profile',
   'ins.whatMeans': 'What this profile means',
   'ins.blurbFallback': "This account's profile is read from its own captured figures.",

@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'أقسام اللاعب',
   'ins.warStats': 'إحصاءات الحرب',
   'ins.merits': 'الاستحقاقات',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'ملفك القتالي',
   'ins.whatMeans': 'ما الذي يعنيه هذا الملف',
   'ins.blurbFallback': 'يُقرأ ملف هذا الحساب من أرقامه المجلوبة الخاصة.',

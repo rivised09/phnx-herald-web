@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Spelersecties',
   'ins.warStats': 'Oorlogsstatistieken',
   'ins.merits': 'Verdiensten',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Jouw oorlogsprofiel',
   'ins.whatMeans': 'Wat dit profiel betekent',
   'ins.blurbFallback': 'Het profiel van dit account wordt gelezen uit zijn eigen vastgelegde cijfers.',
