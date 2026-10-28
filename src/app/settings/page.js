@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, RefreshCw, Save, Table2 } from 'lucide-react';
 import { getSettings, startSnapshotFetch, updateSettings } from '../../lib/api';
 import { toastSuccess, toastError } from '../../lib/swal';
+import ScrapePanel from '../../components/settings/ScrapePanel';
 
 function formatSeconds(ms) {
   if (!ms) return '—';
@@ -127,6 +128,10 @@ export default function SettingsPage() {
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Reload
         </button>
+      </div>
+
+      <div className="mb-3">
+        <ScrapePanel />
       </div>
 
       {loading && (

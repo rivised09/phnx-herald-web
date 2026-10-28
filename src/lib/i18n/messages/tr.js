@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Oyuncu bölümleri',
   'ins.warStats': 'Savaş istatistikleri',
   'ins.merits': 'Hizmetler',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Savaş profiliniz',
   'ins.whatMeans': 'Bu profil ne anlama geliyor',
   'ins.blurbFallback': "Bu hesabın profili, kendi yakalanan verilerinden okunur.",

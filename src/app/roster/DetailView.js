@@ -50,6 +50,20 @@ export default function DetailView({ kind, data }) {
   const backHref = `${player ? '/?tab=players' : '/?tab=alliances'}${
     backDate ? `&date=${encodeURIComponent(backDate)}` : ''
   }`;
+  // Castle coordinates from the profile block (DragonStats): shown as a single
+  // line above the player name, e.g. "K: 22,638, X: 840, Y: 683".
+  const profileBlock = player
+    ? (data.sections || []).find((block) => !block.section)
+    : null;
+  const castleRow = (label) =>
+    profileBlock?.rows.find((row) => row.label === label)?.value;
+  const castleX = castleRow('Castle X');
+  const castleY = castleRow('Castle Y');
+  const castleServer = castleRow('Castle Server');
+  const castleCoords =
+    castleX !== null && castleY !== null && castleServer !== null
+      ? `K: ${castleServer}, X: ${castleX}, Y: ${castleY}`
+      : null;
   // The source's own Profile block: it reads like a caption for the account, so
   // it sits in the header rather than behind a tab.
   const profile = player ? (data.sections || []).find((block) => !block.section) : null;
@@ -98,6 +112,11 @@ export default function DetailView({ kind, data }) {
                   textClass="text-lg"
                 />
                 <div className="min-w-0 flex-1">
+                  {data.castleCoords ? (
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600 mb-1">
+                      {data.castleCoords}
+                    </p>
+                  ) : null}
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
                     {t('roster.kindPlayer')}
                   </p>
@@ -174,7 +193,7 @@ export default function DetailView({ kind, data }) {
           </div>
         ) : null}
 
-        {player && data.otherServers?.length ? (
+        {player && (data.previousServers?.length || data.otherServers?.length) ? (
           <div className="border-b border-gray-800 px-4 py-3">
             <div className="flex items-start gap-2.5">
               <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
@@ -183,7 +202,7 @@ export default function DetailView({ kind, data }) {
                   {t('roster.otherServers')}
                 </h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {data.otherServers.map((number) => (
+                  {(data.previousServers || data.otherServers || []).map((number) => (
                     <span
                       key={number}
                       className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-xs text-neutral-300"
@@ -246,6 +265,7 @@ export default function DetailView({ kind, data }) {
             radar={data.insights?.radar}
             sections={data.sections}
             sectionsDate={data.sectionsDate}
+            albums={data.albums}
           />
         )}
 

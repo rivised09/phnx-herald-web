@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'Bahagian pemain',
   'ins.warStats': 'Statistik perang',
   'ins.merits': 'Jasa',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'Profil perang anda',
   'ins.whatMeans': 'Apa maksud profil ini',
   'ins.blurbFallback': 'Profil akaun ini dibaca daripada angka yang ditangkapnya sendiri.',

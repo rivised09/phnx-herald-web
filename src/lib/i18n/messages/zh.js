@@ -118,6 +118,7 @@ export default {
   'ins.sectionsAria': '玩家版块',
   'ins.warStats': '战争数据',
   'ins.merits': '功勋',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': '你的战斗档案',
   'ins.whatMeans': '此档案说明了什么',
   'ins.blurbFallback': '此账号的档案基于其自身抓取的数据。',

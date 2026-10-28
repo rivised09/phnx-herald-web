@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': '플레이어 섹션',
   'ins.warStats': '전쟁 통계',
   'ins.merits': '공적',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': '나의 전투 프로필',
   'ins.whatMeans': '이 프로필이 의미하는 것',
   'ins.blurbFallback': '이 계정의 프로필은 자체 수집된 수치에서 읽습니다.',

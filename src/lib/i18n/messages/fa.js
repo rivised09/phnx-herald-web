@@ -121,6 +121,7 @@ export default {
   'ins.sectionsAria': 'بخش‌های بازیکن',
   'ins.warStats': 'آمار جنگ',
   'ins.merits': 'شایستگی‌ها',
+  'ins.thisWeek': 'This Week',
   'ins.yourProfile': 'نمایه جنگی شما',
   'ins.whatMeans': 'این نمایه چه معنایی دارد',
   'ins.blurbFallback': 'نمایه این حساب از ارقام دریافت‌شده خودش خوانده می‌شود.',

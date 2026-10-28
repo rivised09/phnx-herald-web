@@ -21,6 +21,7 @@ import {
 import PlayerRadar from './PlayerRadar';
 import PlayerStatsChart from './PlayerStatsChart';
 import GatheredResourcesChart from './GatheredResourcesChart';
+import AlbumGallery from './AlbumGallery';
 import { useT } from '../../components/i18n/LocaleProvider';
 import {
   SECTION_KEYS,
@@ -152,6 +153,59 @@ const SECTION_ORDER = {
   building: ['Power Spread', 'Alliance Activity'],
 };
 
+/**
+ * DragonStats-only fields ("Dragon Stats" section) assigned to the tab they
+ * belong on. Fields not listed here stay on Overview.
+ */
+const DRAGON_STAT_TAB = {
+  // Fighting / combat
+  'PvP Points': 'combat',
+  'Highest PvP Points': 'combat',
+  'Abyss Merits': 'combat',
+  'KvK Merits': 'combat',
+  'Honour Kills': 'combat',
+  'Arena Class Tier': 'combat',
+  'Enemy PvP Money': 'combat',
+  'T4 Units Wounded': 'combat',
+  'T5 Units Wounded': 'combat',
+  // Building
+  'Policy Power': 'building',
+  'Max Unit Tier': 'building',
+  'Skin ID': 'building',
+  'Gems Spent (Total)': 'building',
+  'Epic City Themes': 'building',
+  'Best Legendary Decoration Level': 'building',
+  'Legendary Artifacts': 'building',
+  'Artifact Draws': 'building',
+  'Exchange Coins Spent': 'building',
+  'Decorations Built': 'building',
+  'Maxed Decorations': 'building',
+  'Alliance Grade': 'building',
+  'Alliance Title': 'building',
+  'Alliance Helps': 'building',
+  'Alliance Build Minutes': 'building',
+  'Alliance Blessing Chest Level': 'building',
+  'Login Streak Days': 'building',
+  'Last Login Time': 'building',
+  'Castle X': 'building',
+  'Castle Y': 'building',
+  'Castle Server': 'building',
+  // Farming
+  'Trade Volume': 'farming',
+  'Trades Completed': 'farming',
+  'Alliance Trades': 'farming',
+};
+
+/** Week merit labels: rendered in their own "This Week" section, so excluded
+ * from the generic Dragon Stats block on Overview. */
+const WEEK_MERIT_LABELS = new Set([
+  'Week Merits Infantry',
+  'Week Merits Cavalry',
+  'Week Merits Archers',
+  'Week Merits Mages',
+  'Week Merits Other',
+]);
+
 const SECTION_TAB = new Map(
   Object.entries(SECTION_ORDER).flatMap(([tab, names]) => names.map((name) => [name, tab])),
 );
@@ -162,6 +216,20 @@ function blocksFor(tab, sections) {
   for (const block of sections || []) {
     // The Profile block (empty section name) is rendered in the page header.
     if (!block.section) continue;
+    if (block.section === 'Dragon Stats') {
+      // Split Dragon Stats rows by their assigned tab, so each field lands on
+      // the right tab instead of all piling onto Overview.
+      for (const row of block.rows) {
+        if (WEEK_MERIT_LABELS.has(row.label)) continue;
+        const rowTab = DRAGON_STAT_TAB[row.label];
+        if (rowTab === tab) {
+          known.push({ section: 'Dragon Stats', rows: [row] });
+        } else if (tab === 'overview' && !rowTab) {
+          unknown.push({ section: 'Dragon Stats', rows: [row] });
+        }
+      }
+      continue;
+    }
     if (SECTION_TAB.get(block.section) === tab) known.push(block);
     else if (tab === 'overview' && !SECTION_TAB.has(block.section)) unknown.push(block);
   }
@@ -185,11 +253,15 @@ function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
             {/* A chart that belongs to one block sits directly above it, so
                 the gathered resources read as trend first, rows second. */}
             {charts?.[block.section] || null}
-            <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
-              {!block.section
-                ? t('roster.profile')
-                : t(SECTION_KEYS[block.section] || '', undefined, block.section)}
-            </h3>
+            {/* DragonStats-only fields skip the redundant "Dragon Stats" header —
+                each field label is self-describing and the tab gives context. */}
+            {block.section !== 'Dragon Stats' && (
+              <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                {!block.section
+                  ? t('roster.profile')
+                  : t(SECTION_KEYS[block.section] || '', undefined, block.section)}
+              </h3>
+            )}
             <dl className="mt-2 grid gap-x-5 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
               {block.rows.map((row) => (
                 <div
@@ -272,6 +344,48 @@ function MeritStats({ sections }) {
               {t(rowKeyFor(stat.label) || '', undefined, stat.label)}
             </p>
             <p className="mt-1 font-mono text-sm text-neutral-100">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * "This Week" merit breakdown: the four troop types plus Other, pulled from
+ * the DragonStats "Dragon Stats" section. Rendered below MeritStats on the
+ * overview tab.
+ */
+function WeekMerits({ sections }) {
+  const t = useT();
+  const section = sections.find((item) => item.section === 'Dragon Stats');
+  if (!section) return null;
+  const wanted = [
+    ['Week Merits Infantry', 'infantry'],
+    ['Week Merits Cavalry', 'cavalry'],
+    ['Week Merits Archers', 'marksman'],
+    ['Week Merits Mages', 'mage'],
+    ['Week Merits Other', 'other'],
+  ];
+  const stats = wanted
+    .map(([label, key]) => ({
+      label,
+      key,
+      value: section.rows.find((row) => row.label === label)?.value,
+    }))
+    .filter((item) => item.value !== undefined && item.value !== null);
+  if (!stats.length) return null;
+  return (
+    <Section title={t('ins.thisWeek')}>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-5">
+        {stats.map((stat) => (
+          <div key={stat.key} className="bg-discord-bg-darker px-3 py-3">
+            <p className="mt-2 text-xs text-gray-400">
+              {t(rowKeyFor(stat.label) || '', undefined, stat.label)}
+            </p>
+            <p className="mt-1 font-mono text-sm text-neutral-100">
+              {typeof stat.value === 'number' ? stat.value.toLocaleString('en-US') : stat.value}
+            </p>
           </div>
         ))}
       </div>
@@ -652,6 +766,7 @@ export default function PlayerInsights({
   radar = null,
   sections = [],
   sectionsDate = null,
+  albums = [],
 }) {
   const t = useT();
   const [tab, setTab] = useState('overview');
@@ -664,7 +779,9 @@ export default function PlayerInsights({
         <PlayerStatsChart history={history} />
         <WarStats sections={sections} />
         <MeritStats sections={sections} />
+        <WeekMerits sections={sections} />
         <StatBlocks tab="overview" sections={sections} date={sectionsDate} />
+        <AlbumGallery albums={albums} />
       </div>
     );
   }
@@ -754,6 +871,7 @@ export default function PlayerInsights({
           <PlayerStatsChart history={history} />
           <WarStats sections={sections} />
           <MeritStats sections={sections} />
+          <WeekMerits sections={sections} />
 
           <section className="border-t border-gray-800 px-4 py-4">
             {/* Two columns: the profile reads left, and the activity it is
@@ -889,6 +1007,7 @@ export default function PlayerInsights({
           </section>
 
           <StatBlocks tab="overview" sections={sections} date={sectionsDate} />
+          <AlbumGallery albums={albums} />
         </>
       ) : null}
 
