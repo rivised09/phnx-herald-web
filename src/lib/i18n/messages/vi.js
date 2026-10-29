@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Đã thu thập',
   'roster.prevNames': 'Tên trước đây',
   'roster.otherServers': 'Cũng ở máy chủ khác',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Số liệu nguồn',
   'roster.sourceFiguresMeta': 'Số liệu nguồn · {date}',
   'roster.verbatim': 'Ghi lại nguyên văn từ trang của chính người chơi.',

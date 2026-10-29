@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'कैप्चर किया गया',
   'roster.prevNames': 'पुराने नाम',
   'roster.otherServers': 'अन्य सर्वरों पर भी',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'स्रोत आँकड़े',
   'roster.sourceFiguresMeta': 'स्रोत आँकड़े · {date}',
   'roster.verbatim': 'खिलाड़ी के अपने पेज से शब्दशः दर्ज किया गया।',

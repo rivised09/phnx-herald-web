@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'تم الجلب',
   'roster.prevNames': 'الأسماء السابقة',
   'roster.otherServers': 'أيضاً على خوادم أخرى',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'أرقام المصدر',
   'roster.sourceFiguresMeta': 'أرقام المصدر · {date}',
   'roster.verbatim': 'سُجّلت حرفياً من صفحة اللاعب نفسه.',

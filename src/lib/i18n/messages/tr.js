@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Yakalandı',
   'roster.prevNames': 'Önceki isimler',
   'roster.otherServers': 'Ayrıca sunucularda',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Kaynak veriler',
   'roster.sourceFiguresMeta': 'Kaynak veriler · {date}',
   'roster.verbatim': "Oyuncunun kendi sayfasından olduğu gibi kaydedildi.",

@@ -250,7 +250,7 @@ export async function getLeadershipDashboard() {
       merits: current.merits,
       healing: current.healing,
       deaths: current.deaths,
-      alliance: row.alliance?.name || 'Unaffiliated',
+      alliance: row.alliance?.name || 'Not In An Alliance',
       row: rowMetrics.length ? {
         score: rowScore,
         wins: rowWins,

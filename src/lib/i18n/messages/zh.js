@@ -94,6 +94,7 @@ export default {
   'roster.captured': '已抓取',
   'roster.prevNames': '曾用名',
   'roster.otherServers': '也在其他服务器',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': '来源数据',
   'roster.sourceFiguresMeta': '来源数据 · {date}',
   'roster.verbatim': '照录自玩家自己的页面。',

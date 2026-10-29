@@ -97,6 +97,7 @@ export default {
   'roster.captured': '取得済み',
   'roster.prevNames': '旧名',
   'roster.otherServers': '他のサーバーでも',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': '出典の数値',
   'roster.sourceFiguresMeta': '出典の数値 · {date}',
   'roster.verbatim': 'プレイヤー自身のページから原文のまま記録しています。',

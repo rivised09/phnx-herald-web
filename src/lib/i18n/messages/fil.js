@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Na-capture',
   'roster.prevNames': 'Mga nakaraang pangalan',
   'roster.otherServers': 'Nasa iba pang server din',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Mga figure mula sa pinagmulan',
   'roster.sourceFiguresMeta': 'Mga figure mula sa pinagmulan · {date}',
   'roster.verbatim': 'Itinala nang eksakto mula sa sariling pahina ng manlalaro.',
