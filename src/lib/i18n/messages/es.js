@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Capturado',
   'roster.prevNames': 'Nombres anteriores',
   'roster.otherServers': 'También en servidores',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Cifras de origen',
   'roster.sourceFiguresMeta': 'Cifras de origen · {date}',
   'roster.verbatim': 'Registrado textualmente desde la propia página del jugador.',

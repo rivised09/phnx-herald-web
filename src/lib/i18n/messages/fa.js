@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'دریافت‌شده',
   'roster.prevNames': 'نام‌های پیشین',
   'roster.otherServers': 'همچنین در سرورها',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'ارقام منبع',
   'roster.sourceFiguresMeta': 'ارقام منبع · {date}',
   'roster.verbatim': 'دقیقاً از صفحه خود بازیکن ثبت شده است.',

@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Fångad',
   'roster.prevNames': 'Tidigare namn',
   'roster.otherServers': 'Också på servrar',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Källsiffror',
   'roster.sourceFiguresMeta': 'Källsiffror · {date}',
   'roster.verbatim': 'Återgivet ordagrant från spelarens egen sida.',

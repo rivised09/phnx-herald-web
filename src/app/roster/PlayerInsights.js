@@ -249,7 +249,7 @@ function StatBlocks({ tab, sections, date, exclude = [], charts = null }) {
     >
       <div className="space-y-5">
         {blocks.map((block) => (
-          <div key={block.section || 'profile'}>
+          <div key={`${block.section || 'profile'}:${block.rows[0]?.label || ''}`}>
             {/* A chart that belongs to one block sits directly above it, so
                 the gathered resources read as trend first, rows second. */}
             {charts?.[block.section] || null}
@@ -346,6 +346,62 @@ function MeritStats({ sections }) {
             <p className="mt-1 font-mono text-sm text-neutral-100">{stat.value}</p>
           </div>
         ))}
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * DragonStats-only fields rendered as stat cards on each tab, grouped by
+ * their assigned combat/farming/building category, with icons like War Stats
+ * and Merit Stats.
+ */
+function DragonStatCards({ sections, tab, title }) {
+  const t = useT();
+  const section = sections.find((item) => item.section === 'Dragon Stats');
+  if (!section) return null;
+  const rows = section.rows.filter((row) => DRAGON_STAT_TAB[row.label] === tab);
+  if (!rows.length) return null;
+
+  const iconFor = (label) => {
+    switch (label) {
+      case 'PvP Points':
+      case 'Highest PvP Points':
+      case 'Abyss Merits':
+      case 'KvK Merits':
+        return Coins;
+      case 'Honour Kills':
+        return Swords;
+      case 'Arena Class Tier':
+      case 'T4 Units Wounded':
+      case 'T5 Units Wounded':
+        return Shield;
+      case 'Enemy PvP Money':
+        return Scale;
+      case 'Trade Volume':
+      case 'Trades Completed':
+      case 'Alliance Trades':
+        return Coins;
+      default:
+        return Shield;
+    }
+  };
+
+  return (
+    <Section title={title}>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-3 lg:grid-cols-4">
+        {rows.map((row) => {
+          const Icon = iconFor(row.label);
+          return (
+            <div key={row.label} className="bg-discord-bg-darker px-3 py-3">
+              <Icon className="h-7 w-7 text-white" strokeWidth={1.7} />
+              <p className="mt-2 text-xs text-gray-400">
+                {t(rowKeyFor(row.label) || '', undefined, row.label)}
+              </p>
+              <p className="mt-1 font-mono text-sm text-neutral-100">{row.value}</p>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
@@ -1017,6 +1073,7 @@ export default function PlayerInsights({
             tab={tab}
             sections={sections}
             date={sectionsDate}
+            exclude={['Dragon Stats']}
             charts={
               tab === 'farming'
                 ? {
@@ -1025,6 +1082,15 @@ export default function PlayerInsights({
                 : null
             }
           />
+          {tab === 'combat' && (
+            <DragonStatCards sections={sections} tab='combat' title='Combat Stats' />
+          )}
+          {tab === 'farming' && (
+            <DragonStatCards sections={sections} tab='farming' title='Trading Stats' />
+          )}
+          {tab === 'building' && (
+            <DragonStatCards sections={sections} tab='building' title='Building Stats' />
+          )}
           <ProgressTable rows={categoryRows(tab).progress} hint={progressHint} />
           <EfficiencyGrid rows={categoryRows(tab).efficiency} series={progress.series} />
           <ComparisonList rows={categoryRows(tab).periods} hint={t('narr.comparison')} />

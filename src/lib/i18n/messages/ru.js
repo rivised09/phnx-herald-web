@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Снято',
   'roster.prevNames': 'Прежние имена',
   'roster.otherServers': 'Также на серверах',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Данные источника',
   'roster.sourceFiguresMeta': 'Данные источника · {date}',
   'roster.verbatim': 'Записано дословно со страницы игрока.',

@@ -52,11 +52,12 @@ export default function DetailView({ kind, data }) {
   }`;
   // Castle coordinates from the profile block (DragonStats): shown as a single
   // line above the player name, e.g. "K: 22,638, X: 840, Y: 683".
-  const profileBlock = player
-    ? (data.sections || []).find((block) => !block.section)
-    : null;
+  // Castle X/Y/Server can live in any section (often "Dragon Stats"), so
+  // search all sections, not just the profile block.
   const castleRow = (label) =>
-    profileBlock?.rows.find((row) => row.label === label)?.value;
+    (data.sections || [])
+      .flatMap((block) => block.rows || [])
+      .find((row) => row.label === label)?.value;
   const castleX = castleRow('Castle X');
   const castleY = castleRow('Castle Y');
   const castleServer = castleRow('Castle Server');
@@ -112,9 +113,9 @@ export default function DetailView({ kind, data }) {
                   textClass="text-lg"
                 />
                 <div className="min-w-0 flex-1">
-                  {data.castleCoords ? (
+                  {castleCoords ? (
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600 mb-1">
-                      {data.castleCoords}
+                      {castleCoords}
                     </p>
                   ) : null}
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">
@@ -123,6 +124,14 @@ export default function DetailView({ kind, data }) {
                   <h1 className="mt-1 truncate text-xl font-semibold text-neutral-100">
                     {data.name}
                   </h1>
+                  {(data.previousServers?.length || data.otherServers?.length) ? (
+                    <p className="mt-1 font-mono text-[10px] text-gray-400">
+                      {t('roster.previousServersLabel')}{' '}
+                      {(data.previousServers || data.otherServers || [])
+                        .map((n) => `#${n}`)
+                        .join(', ')}
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     <Chip label={t('stat.rank')} value={`#${data.rank ?? '—'}`} accent />
                     <Chip label={t('stat.power')} value={data.power || '—'} accent />
@@ -185,29 +194,6 @@ export default function DetailView({ kind, data }) {
                       className="max-w-full truncate rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 text-xs text-neutral-300"
                     >
                       {name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {player && (data.previousServers?.length || data.otherServers?.length) ? (
-          <div className="border-b border-gray-800 px-4 py-3">
-            <div className="flex items-start gap-2.5">
-              <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
-              <div className="min-w-0">
-                <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500">
-                  {t('roster.otherServers')}
-                </h2>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {(data.previousServers || data.otherServers || []).map((number) => (
-                    <span
-                      key={number}
-                      className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-xs text-neutral-300"
-                    >
-                      #{number}
                     </span>
                   ))}
                 </div>

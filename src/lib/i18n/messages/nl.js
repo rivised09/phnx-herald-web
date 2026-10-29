@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Vastgelegd',
   'roster.prevNames': 'Eerdere namen',
   'roster.otherServers': 'Ook op servers',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Broncijfers',
   'roster.sourceFiguresMeta': 'Broncijfers · {date}',
   'roster.verbatim': 'Letterlijk overgenomen van de eigen pagina van de speler.',

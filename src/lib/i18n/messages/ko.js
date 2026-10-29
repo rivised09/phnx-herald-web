@@ -97,6 +97,7 @@ export default {
   'roster.captured': '수집됨',
   'roster.prevNames': '이전 이름',
   'roster.otherServers': '다른 서버에도',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': '출처 수치',
   'roster.sourceFiguresMeta': '출처 수치 · {date}',
   'roster.verbatim': '플레이어 본인의 페이지에서 그대로 기록했습니다.',

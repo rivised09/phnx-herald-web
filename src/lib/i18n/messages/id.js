@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Ditangkap',
   'roster.prevNames': 'Nama sebelumnya',
   'roster.otherServers': 'Juga di server lain',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Angka sumber',
   'roster.sourceFiguresMeta': 'Angka sumber · {date}',
   'roster.verbatim': 'Dicatat apa adanya dari halaman pemain itu sendiri.',

@@ -97,6 +97,7 @@ export default {
   'roster.captured': 'Zrzut',
   'roster.prevNames': 'Poprzednie imiona',
   'roster.otherServers': 'Także na serwerach',
+  'roster.previousServersLabel': 'Previous Servers:',
   'roster.sourceFigures': 'Dane źródłowe',
   'roster.sourceFiguresMeta': 'Dane źródłowe · {date}',
   'roster.verbatim': 'Zapisane dosłownie ze strony gracza.',

@@ -1,4 +1,5 @@
 import { buildInsights } from './insights';
+import { carryForwardEntry } from './normalize';
 import { gatheredSeries, formatStat } from './store';
 import { serverId, sourceUrl } from './source';
 
@@ -71,6 +72,54 @@ function snapshotDateParam(value) {
   return DATE_PARAM.test(iso) ? iso : null;
 }
 
+/**
+ * The bucket callofstats publishes for players who are in no alliance. It has
+ * a real alliance page and a real id, so it sorts and links like any other.
+ * DragonStats leaves those players with an empty alliance instead, which used
+ * to make the bucket disappear from the alliances tab; the read path adds it
+ * back with the same id so old and new days agree.
+ */
+const UNAFFILIATED = {
+  id: '030d6dc7-910b-4186-bafb-13df68dc3a96',
+  name: 'Not In An Alliance',
+};
+
+function powerOf(value) {
+  return Number(String(value ?? 0).replace(/[^\d.-]/g, '')) || 0;
+}
+
+/**
+ * One snapshot's alliances, with the "Not In An Alliance" bucket added when
+ * some players have no alliance. Ranks are recomputed from power because the
+ * bucket belongs in its real place, not after the named alliances.
+ */
+function alliancesWithUnaffiliated(alliances, players) {
+  const list = (alliances || []).map((alliance) => ({ ...alliance }));
+  const members = (players || []).filter((player) => !player.allianceId);
+  const present = list.some(
+    (alliance) => alliance.id === UNAFFILIATED.id || alliance.name === UNAFFILIATED.name,
+  );
+
+  if (members.length && !present) {
+    const power = members.reduce((sum, player) => sum + powerOf(player.stats?.Power), 0);
+    list.push({
+      id: UNAFFILIATED.id,
+      name: UNAFFILIATED.name,
+      stats: { Power: power.toLocaleString('en-US'), Members: String(members.length) },
+    });
+  }
+
+  list.sort(
+    (a, b) =>
+      powerOf(b.stats?.Power) - powerOf(a.stats?.Power) ||
+      String(a.name).localeCompare(String(b.name)),
+  );
+  list.forEach((alliance, index) => {
+    alliance.rank = index + 1;
+  });
+  return list;
+}
+
 /** Days between a stored snapshot and now, as the home page reports it. */
 function staleDays(iso) {
   return Math.floor((Date.now() - new Date(`${iso}T00:00:00.000Z`).getTime()) / 86400000);
@@ -109,12 +158,15 @@ export async function getStoredRoster({ date = null } = {}) {
   const avatarById = await loadAvatars(body.players);
 
   const age = staleDays(body.snapshot.date);
+  const alliances = alliancesWithUnaffiliated(body.alliances, body.players);
   const players = body.players.map((player) => ({
     ...player,
+    allianceId: player.allianceId || UNAFFILIATED.name,
     avatar: player.avatar || avatarById.get(player.id) || null,
   }));
   return {
     ...body,
+    alliances,
     players,
     // The stored file carries the facts; the two derived fields are computed
     // when it is read, because they depend on today, not on the export.
@@ -170,6 +222,42 @@ function latestAvatar(file) {
 }
 
 /**
+ * Splits nameHistory into previous names and previous server numbers.
+ *
+ * Some sources (callofstats) mixed server numbers into nameHistory. We
+ * separate them so names and servers each get their own section.
+ */
+function splitNameHistory(nameHistory, currentName) {
+  const previousNames = [];
+  const previousServers = [];
+  for (const name of nameHistory || []) {
+    if (name === currentName) continue;
+    if (/^\d+$/.test(String(name).trim())) {
+      previousServers.push(String(name).trim());
+    } else {
+      previousNames.push(name);
+    }
+  }
+  return { previousNames, previousServers };
+}
+
+/**
+ * Albums for a specific date. Prefers per-date albums stored by the bot
+ * (DragonStats), falling back to top-level callofstats albums filtered by
+ * their postedAt date matching the wanted snapshot date.
+ */
+function albumsForDate(file, wanted) {
+  const entry = file.byDate?.[wanted];
+  if (entry?.albums?.length) return entry.albums;
+
+  const topLevel = file.albums || [];
+  if (!topLevel.length) return [];
+
+  const byDate = topLevel.filter((a) => a.postedAt === wanted);
+  return byDate.length ? byDate : [];
+}
+
+/**
  * A player's profile at one date, or at the newest one.
  *
  * One file holds the whole history, so the picker's dates and every series the
@@ -182,7 +270,7 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
 
   const requested = snapshotDateParam(date);
   const wanted = requested && file.dates.includes(requested) ? requested : file.dates[0];
-  const entry = file.byDate?.[wanted];
+  const entry = carryForwardEntry(file, wanted);
   if (!entry) return null;
 
   const history = file.dates
@@ -199,23 +287,32 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
   const radarByDate = upTo(file.radar, wanted);
   const sections = entry.sections || [];
 
+  const { previousNames: splitNames, previousServers: splitServers } =
+    splitNameHistory(file.nameHistory, entry.name);
+
+  const allPreviousServers = [
+    ...new Set([...(file.previousServers || []), ...(file.otherServers || []), ...splitServers]),
+  ];
+
   return {
     id: file.id,
     name: entry.name,
     rank: entry.rank,
     power: formatStat(entry.power),
     avatar: entry.avatar || latestAvatar(file),
-    alliance: entry.alliance ? { id: entry.alliance, name: entry.alliance } : null,
+    alliance: entry.alliance
+      ? { id: entry.alliance, name: entry.alliance }
+      : { id: UNAFFILIATED.id, name: UNAFFILIATED.name },
     snapshotDate: wanted,
     snapshotDates: file.dates,
     requestedDate: requested,
     isLatest: wanted === file.dates[0],
     history,
     gathered: gatheredSeries(metricsByDate),
-    previousNames: (file.nameHistory || []).filter((name) => name !== entry.name),
-    previousServers: file.previousServers || [],
+    previousNames: splitNames,
+    previousServers: allPreviousServers,
     otherServers: file.otherServers || [],
-    albums: entry.albums || [],
+    albums: albumsForDate(file, wanted),
     sections,
     sectionsDate: sections.length ? wanted : null,
     insights: buildInsights({
@@ -229,8 +326,56 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
   };
 }
 
+/**
+ * The "Not In An Alliance" page for a date the stored alliance file does not
+ * cover yet (the DragonStats days). Built from that date's snapshot, so the
+ * bucket opens like any other alliance instead of falling back to its newest
+ * callofstats entry.
+ */
+async function unaffiliatedDetail(date) {
+  const index = await readJson('index.json');
+  if (!index || !Array.isArray(index.dates) || !index.dates.length) return null;
+
+  const requested = snapshotDateParam(date);
+  const wanted = requested && index.dates.includes(requested) ? requested : index.latest;
+  const snapshot = await readJson(`snapshots/${wanted}.json`);
+  if (!snapshot) return null;
+
+  const members = (snapshot.players || [])
+    .filter((player) => !player.allianceId)
+    .sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
+  if (!members.length) return null;
+
+  const alliances = alliancesWithUnaffiliated(snapshot.alliances, snapshot.players);
+  const entry = alliances.find((alliance) => alliance.id === UNAFFILIATED.id);
+  const power = members.reduce((sum, player) => sum + powerOf(player.stats?.Power), 0);
+
+  return {
+    id: UNAFFILIATED.id,
+    name: UNAFFILIATED.name,
+    rank: entry?.rank ?? null,
+    power: formatStat(power),
+    memberCount: members.length,
+    snapshotDate: wanted,
+    snapshotDates: index.dates,
+    requestedDate: requested,
+    isLatest: wanted === index.dates[0],
+    players: members.map((player) => ({
+      id: player.id,
+      name: player.name,
+      rank: player.index,
+      power: formatStat(powerOf(player.stats?.Power)),
+    })),
+  };
+}
+
 /** An alliance at one date, or at its newest snapshot. */
 export async function getAllianceDetail(id, { date = null } = {}) {
+  if (id === UNAFFILIATED.id) {
+    const derived = await unaffiliatedDetail(date);
+    if (derived) return derived;
+  }
+
   const file = await readJson(`alliances/${id}.json`);
   if (!file || !Array.isArray(file.dates) || !file.dates.length) return null;
 
