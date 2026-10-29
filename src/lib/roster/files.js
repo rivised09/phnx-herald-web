@@ -369,6 +369,350 @@ async function unaffiliatedDetail(date) {
   };
 }
 
+function compactNumber(value) {
+  if (value === null || value === undefined) return '—';
+  if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+  if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (Math.abs(value) >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
+  return Math.round(value).toLocaleString();
+}
+
+/** Fetch multiple JSON files with a concurrency limit, returning results in the same order. */
+async function readFilesInParallel(urls, limit = 15) {
+  const results = new Array(urls.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, urls.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= urls.length) return;
+      try {
+        results[i] = await readJson(urls[i]);
+      } catch {
+        results[i] = null;
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * R2-native replacement for the Postgres `getLeadershipDashboard`.
+ *
+ * Reads snapshot files for the last 7 days and player files to build the
+ * same leadership dashboard shape the `LeadershipClient` expects, so the
+ * leadership page works without a database.
+ */
+export async function getLeadershipDashboard() {
+  if (!filesEnabled()) return null;
+
+  const number = Number(serverId());
+
+  // Read index to get all stored dates
+  const index = await readJson('index.json');
+  if (!index || !Array.isArray(index.dates) || !index.dates.length) return null;
+
+  const today = new Date();
+  const windowStart = new Date(Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() - 7,
+  ));
+
+  // Filter dates to last 7 days (inclusive)
+  const dates = index.dates
+    .filter((d) => new Date(d) >= windowStart)
+    .sort();
+
+  if (!dates.length) return null;
+
+  const latestDate = dates[dates.length - 1];
+  const baselineDate = dates[0];
+
+  // Read snapshot files for each date to get players with power
+  const snapshots = await Promise.all(
+    dates.map((date) => readJson(`snapshots/${date}.json`)),
+  );
+
+  // Collect all unique player IDs across snapshots in the window
+  const allPlayerIds = new Set();
+  for (const snap of snapshots) {
+    if (snap?.players) {
+      for (const p of snap.players) allPlayerIds.add(p.id);
+    }
+  }
+
+  // Read player files with concurrency limit
+  const playerFileResults = await readFilesInParallel(
+    [...allPlayerIds].map((id) => `players/${id}.json`),
+    15,
+  );
+
+  const playerFiles = new Map();
+  const idArray = [...allPlayerIds];
+  for (let i = 0; i < playerFileResults.length; i++) {
+    if (playerFileResults[i]) playerFiles.set(idArray[i], playerFileResults[i]);
+  }
+
+  // Build per-date player maps from snapshots: date -> Map(playerId -> {power, alliance, name})
+  const snapshotData = new Map();
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    const snap = snapshots[i];
+    const playersById = new Map();
+    if (snap?.players) {
+      for (const p of snap.players) {
+        playersById.set(p.id, {
+          power: Number(String(p.stats?.Power).replace(/,/g, '')) || null,
+          alliance: p.allianceId || null,
+          name: p.name,
+        });
+      }
+    }
+    snapshotData.set(date, playersById);
+  }
+
+  const latestSnapPlayers = snapshotData.get(latestDate);
+  if (!latestSnapPlayers || !latestSnapPlayers.size) return null;
+
+  const baselineSnapPlayers = snapshotData.get(baselineDate);
+
+  // Build player entries
+  const players = [];
+  for (const [playerId, snapPlayer] of latestSnapPlayers) {
+    const file = playerFiles.get(playerId);
+    if (!file) continue;
+
+    // Gather metrics for each date in the window
+    const observations = dates.map((date, index) => {
+      const m = file.metrics?.[date] || {};
+      const snapPlayers = snapshotData.get(date);
+      const snapEntry = snapPlayers?.get(playerId);
+
+      return {
+        index,
+        date,
+        values: {
+          kills: m['Units Killed'] ?? null,
+          deaths: m['Units Dead'] ?? null,
+          healing: m['Units Healed'] ?? null,
+          merits: m['Merits'] ?? null,
+        },
+        power: snapEntry?.power ?? m['Current Power'] ?? null,
+      };
+    }).filter((item) =>
+      Object.values(item.values).some((value) => value !== null) || item.power !== null,
+    );
+
+    if (!observations.length) continue;
+
+    const first = observations[0] || null;
+    const metricObservations = observations.filter((item) =>
+      Object.values(item.values).some((value) => value !== null),
+    );
+    const firstMetric = metricObservations[0] || null;
+    const lastMetric = metricObservations[metricObservations.length - 1] || null;
+    const current = lastMetric?.values || {};
+    const previousValues = firstMetric?.values || {};
+
+    const powerChange =
+      first?.power === null || first?.power === undefined || snapPlayer.power === null
+        ? null
+        : snapPlayer.power - first.power;
+
+    const changes = Object.fromEntries(
+      Object.keys(current).map((key) => [
+        key,
+        current[key] !== null && previousValues[key] !== null
+          ? current[key] - previousValues[key]
+          : null,
+      ]),
+    );
+
+    const activeObservations = observations.slice(1).filter((observation, index) => {
+      const before = observations[index].values;
+      return ['kills', 'merits', 'healing'].some(
+        (key) =>
+          before[key] !== null &&
+          observation.values[key] !== null &&
+          observation.values[key] > before[key],
+      ) || (observation.power !== null &&
+        before.power !== null &&
+        observation.power > before.power);
+    }).length;
+
+    const activity =
+      activeObservations >= 6
+        ? 'Highly Active'
+        : activeObservations >= 4
+          ? 'Active'
+          : activeObservations >= 1
+            ? 'Low Activity'
+            : 'Dormant';
+
+    const status =
+      activity === 'Highly Active'
+        ? 'Core Fighter'
+        : activity === 'Active'
+          ? 'Support'
+          : activity === 'Dormant'
+            ? 'Dormant'
+            : 'Monitor';
+
+    const lastMetrics = lastMetric || {};
+    const rowMetrics = {
+      score: lastMetrics['Highest RoW Score'] ?? null,
+      wins: lastMetrics['RoW Wins'] ?? null,
+      matches: lastMetrics['RoW Matches Played'] ?? null,
+    };
+
+    const tocMetrics = {
+      wins: lastMetrics['ToC Wins'] ?? null,
+      battles: lastMetrics['ToC Battles'] ?? null,
+      winRate: lastMetrics['ToC Winrate'] ?? null,
+    };
+
+    players.push({
+      id: playerId,
+      name: snapPlayer.name,
+      power: compactNumber(snapPlayer.power),
+      powerValue: snapPlayer.power ?? 0,
+      activity,
+      status,
+      powerChange,
+      changes,
+      activityDays: activeObservations,
+      kills: current.kills,
+      merits: current.merits,
+      healing: current.healing,
+      deaths: current.deaths,
+      alliance: snapPlayer.alliance || 'Not In An Alliance',
+      row:
+        rowMetrics.score !== null ||
+        rowMetrics.wins !== null ||
+        rowMetrics.matches !== null
+          ? rowMetrics
+          : undefined,
+      toc:
+        tocMetrics.wins !== null ||
+        tocMetrics.battles !== null ||
+        tocMetrics.winRate !== null
+          ? tocMetrics
+          : undefined,
+    });
+  }
+
+  // Aggregations
+  const highPowerLowActivity = players.filter(
+    (player) => player.powerValue >= 25000000 && player.activity === 'Low Activity',
+  ).length;
+  const lowActivity = players.filter((player) => player.activity === 'Low Activity').length;
+  const highActivity = players.filter(
+    (player) => player.activity === 'Highly Active' || player.activity === 'Active',
+  ).length;
+  const kingdomPower = players.reduce((sum, player) => sum + (player.powerValue || 0), 0);
+
+  // Previous power from baseline snapshot
+  let previousPower = 0;
+  if (baselineSnapPlayers) {
+    for (const entry of baselineSnapPlayers.values()) {
+      if (entry.power) previousPower += entry.power;
+    }
+  }
+
+  const sumChange = (key) => players.reduce((sum, player) => sum + (player.changes[key] || 0), 0);
+  const recentChanges = {
+    power: players.reduce((sum, player) => sum + (player.powerChange || 0), 0),
+    kills: sumChange('kills'),
+    deaths: sumChange('deaths'),
+    healing: sumChange('healing'),
+    merits: sumChange('merits'),
+  };
+
+  // Activity timeline: per date, count players who progressed vs previous date
+  const activityTimeline = dates.map((date, index) => {
+    if (index === 0) {
+      return { date, activePlayers: 0 };
+    }
+    const previousDate = dates[index - 1];
+    let activePlayers = 0;
+    for (const [, file] of playerFiles) {
+      const currentM = file.metrics?.[date] || {};
+      const previousM = file.metrics?.[previousDate] || {};
+      const currentPower = currentM['Current Power'] ?? null;
+      const previousPowerVal = previousM['Current Power'] ?? null;
+
+      const progressed = ['Units Killed', 'Merits', 'Units Healed'].some((label) => {
+        const current = currentM[label];
+        const previous = previousM[label];
+        return current !== null && previous !== null && current > previous;
+      });
+
+      if (
+        progressed ||
+        (currentPower !== null &&
+          previousPowerVal !== null &&
+          currentPower > previousPowerVal)
+      ) {
+        activePlayers += 1;
+      }
+    }
+    return { date, activePlayers };
+  });
+
+  return {
+    server: number,
+    snapshotDate: latestDate,
+    periodStart: baselineDate,
+    periodEnd: latestDate,
+    snapshotCount: dates.length,
+    kingdom: {
+      power: compactNumber(kingdomPower),
+      powerChange:
+        previousPower > 0
+          ? `${(((kingdomPower - previousPower) / previousPower) * 100).toFixed(1)}%`
+          : '—',
+      lords: players.length,
+      lordChange: baselineSnapPlayers
+        ? players.length - baselineSnapPlayers.size
+        : null,
+      activity: highActivity ? 'High' : 'Low',
+    },
+    activityCounts: {
+      active: players.filter(
+        (player) => player.activity === 'Active' || player.activity === 'Highly Active',
+      ).length,
+      low: lowActivity,
+      dormant: players.filter((player) => player.activity === 'Dormant').length,
+    },
+    recentChanges,
+    activityTimeline,
+    biggestKillGrowth: [...players]
+      .filter((player) => player.changes.kills !== null)
+      .sort((a, b) => b.changes.kills - a.changes.kills)
+      .slice(0, 5),
+    attention: [
+      highPowerLowActivity
+        ? `${highPowerLowActivity} high-power players have shown very low recent activity`
+        : 'No high-power inactivity threshold has been triggered',
+      `${lowActivity} players have no measurable progression in the latest scan`,
+      dates.length === 1
+        ? 'A second snapshot this week is required for change detection'
+        : `Changes are aggregated from ${dates.length} snapshot${dates.length === 1 ? '' : 's'} this week`,
+      `${highActivity} players showed measurable combat or merit growth`,
+    ],
+    readiness: {
+      ready: players.filter(
+        (player) => player.activity === 'Highly Active' || player.activity === 'Active',
+      ).length,
+      support: players.filter((player) => player.status === 'Support').length,
+      lowActivity,
+      dormant: players.filter((player) => player.activity === 'Dormant').length,
+    },
+    players: players.sort((a, b) => b.powerValue - a.powerValue),
+  };
+}
+
 /** An alliance at one date, or at its newest snapshot. */
 export async function getAllianceDetail(id, { date = null } = {}) {
   if (id === UNAFFILIATED.id) {

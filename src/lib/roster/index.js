@@ -21,7 +21,7 @@ const roster = files.filesEnabled() ? files : store;
 export const getStoredRoster = roster.getStoredRoster;
 
 const { getPlayerDetail, getAllianceDetail } = roster;
-const { getLeadershipDashboard } = store;
+const { getLeadershipDashboard } = roster;
 
 /**
  * The roster reads behind a small cache, so a page is served from the data
