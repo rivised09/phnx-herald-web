@@ -242,9 +242,33 @@ function splitNameHistory(nameHistory, currentName) {
 }
 
 /**
+ * The day an album image was posted. The published link is a base64
+ * image-proxy URL, so the original CDN path - which carries the upload date -
+ * has to be decoded out of the payload. Older scrapes stored the day the image
+ * was first seen instead, so that stays as the fallback.
+ */
+function albumPostedAt(album) {
+  const url = String(album?.url || '');
+  const proxy = url.match(/image-proxy\/([A-Za-z0-9+/=]+)$/);
+  if (proxy) {
+    try {
+      const original = Buffer.from(proxy[1], 'base64').toString('utf8');
+      const match = original.match(/(\d{4}-\d{2}-\d{2})/);
+      if (match) return match[1];
+    } catch {
+      // fall through to the stored value
+    }
+  }
+  const direct = url.match(/(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  return album?.postedAt || null;
+}
+
+/**
  * Albums for a specific date. Prefers per-date albums stored by the bot
- * (DragonStats), falling back to top-level callofstats albums filtered by
- * their postedAt date matching the wanted snapshot date.
+ * (DragonStats), falling back to the top-level callofstats gallery: the album
+ * on a given day is every image posted up to that day, newest first, because
+ * the gallery itself only has eight slots.
  */
 function albumsForDate(file, wanted) {
   const entry = file.byDate?.[wanted];
@@ -253,8 +277,12 @@ function albumsForDate(file, wanted) {
   const topLevel = file.albums || [];
   if (!topLevel.length) return [];
 
-  const byDate = topLevel.filter((a) => a.postedAt === wanted);
-  return byDate.length ? byDate : [];
+  return topLevel
+    .map((album) => ({ album, postedAt: albumPostedAt(album) }))
+    .filter(({ postedAt }) => !postedAt || postedAt <= wanted)
+    .sort((a, b) => String(b.postedAt || '').localeCompare(String(a.postedAt || '')))
+    .slice(0, 8)
+    .map(({ album }) => album);
 }
 
 /**
