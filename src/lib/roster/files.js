@@ -265,24 +265,13 @@ function albumPostedAt(album) {
 }
 
 /**
- * Albums for a specific date. Prefers per-date albums stored by the bot
- * (DragonStats), falling back to the top-level callofstats gallery: the album
- * on a given day is every image posted up to that day, newest first, because
- * the gallery itself only has eight slots.
+ * Albums for a specific date. Only per-date albums are used: a snapshot must
+ * show the gallery as it existed on that exact day, not a global gallery
+ * copied from another date.
  */
 function albumsForDate(file, wanted) {
   const entry = file.byDate?.[wanted];
-  if (entry?.albums?.length) return entry.albums;
-
-  const topLevel = file.albums || [];
-  if (!topLevel.length) return [];
-
-  return topLevel
-    .map((album) => ({ album, postedAt: albumPostedAt(album) }))
-    .filter(({ postedAt }) => !postedAt || postedAt <= wanted)
-    .sort((a, b) => String(b.postedAt || '').localeCompare(String(a.postedAt || '')))
-    .slice(0, 8)
-    .map(({ album }) => album);
+  return entry?.albums?.slice(0, 8) || [];
 }
 
 /**
@@ -327,7 +316,13 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     name: entry.name,
     rank: entry.rank,
     power: formatStat(entry.power),
-    avatar: entry.avatar || latestAvatar(file),
+    avatar: (() => {
+      // Enriched dates (with per-date albums) keep their own avatar.
+      // Unenriched dates show the newest available avatar so the
+      // profile never looks stale before the next enrichment run.
+      const hasEnrichment = Array.isArray(file.byDate?.[wanted]?.albums) && file.byDate[wanted].albums.length > 0;
+      return hasEnrichment ? (entry.avatar || latestAvatar(file)) : latestAvatar(file);
+    })(),
     alliance: entry.alliance
       ? { id: entry.alliance, name: entry.alliance }
       : { id: UNAFFILIATED.id, name: UNAFFILIATED.name },
