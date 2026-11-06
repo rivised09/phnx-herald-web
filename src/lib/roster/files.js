@@ -264,14 +264,42 @@ function albumPostedAt(album) {
   return album?.postedAt || null;
 }
 
+/** Whole days between two ISO dates, used to pick the closest gallery. */
+function albumDistance(left, right) {
+  return Math.abs(
+    Date.parse(`${left}T00:00:00Z`) - Date.parse(`${right}T00:00:00Z`),
+  );
+}
+
 /**
- * Albums for a specific date. Only per-date albums are used: a snapshot must
- * show the gallery as it existed on that exact day, not a global gallery
- * copied from another date.
+ * Albums for a specific date.
+ *
+ * A date with its own gallery always wins. When the date has none - typically a
+ * DragonStats-only day, which carries no album images - the single nearest date
+ * that does have albums is borrowed. Only that one date's images are used:
+ * galleries from different dates are never merged, so likes and captions stay
+ * consistent with one capture.
  */
 function albumsForDate(file, wanted) {
-  const entry = file.byDate?.[wanted];
-  return entry?.albums?.slice(0, 8) || [];
+  const own = file.byDate?.[wanted]?.albums;
+  if (Array.isArray(own) && own.length) return own.slice(0, 8);
+
+  let nearest = null;
+  for (const date of file.dates || []) {
+    const albums = file.byDate?.[date]?.albums;
+    if (!Array.isArray(albums) || !albums.length) continue;
+    const distance = albumDistance(date, wanted);
+    // Ties go to the older date: a snapshot should not prefer a gallery
+    // captured after the day it is showing.
+    if (
+      !nearest ||
+      distance < nearest.distance ||
+      (distance === nearest.distance && date < nearest.date)
+    ) {
+      nearest = { date, albums, distance };
+    }
+  }
+  return nearest ? nearest.albums.slice(0, 8) : [];
 }
 
 /**
