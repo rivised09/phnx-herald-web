@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Flame } from 'lucide-react';
-import { LOCALES } from '../../lib/i18n';
+import { isPublicPath, LOCALES } from '../../lib/i18n';
 import Flag from './Flag';
 import { DONE_KEY, OPEN_EVENT, useLocale } from './LocaleProvider';
 
@@ -11,24 +12,30 @@ import { DONE_KEY, OPEN_EVENT, useLocale } from './LocaleProvider';
  * language previews it immediately; Start (or Escape) dismisses and remembers
  * the choice for this browser only. The panel takes focus when it opens so
  * Escape works no matter where the dialog was summoned from.
+ *
+ * The first visit only counts on the public pages, where the header carries
+ * this dialog: leadership mounts it too (so its language button works), but a
+ * fresh browser must not be covered by a welcome modal the moment a leader
+ * opens the dashboard - there the dialog opens on demand instead.
  */
 export default function Onboarding() {
   const { locale, t, setLocale } = useLocale();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
 
   useEffect(() => {
     try {
-      if (window.localStorage.getItem(DONE_KEY) !== '1') setOpen(true);
+      if (isPublicPath(pathname) && window.localStorage.getItem(DONE_KEY) !== '1') setOpen(true);
     } catch {
-      setOpen(true);
+      if (isPublicPath(pathname)) setOpen(true);
     }
     const onOpen = () => {
       setOpen(true);
     };
     window.addEventListener(OPEN_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_EVENT, onOpen);
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     if (open) panelRef.current?.focus();

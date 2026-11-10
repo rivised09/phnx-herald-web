@@ -95,7 +95,11 @@ function powerOf(value) {
  */
 function alliancesWithUnaffiliated(alliances, players) {
   const list = (alliances || []).map((alliance) => ({ ...alliance }));
-  const members = (players || []).filter((player) => !player.allianceId);
+  // callofstats stores "no alliance" as null, DragonStats as the bucket's
+  // name - both mean unaffiliated, and both have to count here.
+  const members = (players || []).filter(
+    (player) => !player.allianceId || player.allianceId === UNAFFILIATED.name,
+  );
   const present = list.some(
     (alliance) => alliance.id === UNAFFILIATED.id || alliance.name === UNAFFILIATED.name,
   );
@@ -380,7 +384,7 @@ async function unaffiliatedDetail(date) {
   if (!snapshot) return null;
 
   const members = (snapshot.players || [])
-    .filter((player) => !player.allianceId)
+    .filter((player) => !player.allianceId || player.allianceId === UNAFFILIATED.name)
     .sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
   if (!members.length) return null;
 
@@ -426,7 +430,15 @@ async function readFilesInParallel(urls, limit = 15) {
       try {
         results[i] = await readJson(urls[i]);
       } catch {
-        results[i] = null;
+        // One retry: a slow bucket answer must not silently drop a player
+        // from every total on the page (304 lords rendering as 301 is exactly
+        // what an unretried timeout looks like).
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 750));
+          results[i] = await readJson(urls[i]);
+        } catch {
+          results[i] = null;
+        }
       }
     }
   });
@@ -440,8 +452,12 @@ async function readFilesInParallel(urls, limit = 15) {
  * Reads snapshot files for the last 7 days and player files to build the
  * same leadership dashboard shape the `LeadershipClient` expects, so the
  * leadership page works without a database.
+ *
+ * `endDate` pins the window to the 7 days ending on that snapshot date (the
+ * same control the public home page has), so a leader can inspect a past
+ * week instead of being locked to the current one.
  */
-export async function getLeadershipDashboard() {
+export async function getLeadershipDashboard({ endDate = null } = {}) {
   if (!filesEnabled()) return null;
 
   const number = Number(serverId());
@@ -450,31 +466,75 @@ export async function getLeadershipDashboard() {
   const index = await readJson('index.json');
   if (!index || !Array.isArray(index.dates) || !index.dates.length) return null;
 
-  const today = new Date();
-  const windowStart = new Date(Date.UTC(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate() - 7,
-  ));
+  const wanted =
+    endDate && DATE_PARAM.test(String(endDate)) && index.dates.includes(String(endDate))
+      ? String(endDate)
+      : null;
+  // The window ends at the pinned date, or at the newest stored snapshot, and
+  // spans seven days back from there - eight calendar days, seven intervals.
+  const end = wanted || index.dates[0];
+  const windowStartIso = new Date(
+    new Date(`${end}T00:00:00.000Z`).getTime() - 7 * 86400000,
+  )
+    .toISOString()
+    .slice(0, 10);
 
-  // Filter dates to last 7 days (inclusive)
-  const dates = index.dates
-    .filter((d) => new Date(d) >= windowStart)
-    .sort();
+  // Every calendar day of the window, not just the stored ones: a day nobody
+  // captured is a gap the chart has to show, and a silent skip reads as zero
+  // activity (the Aug 2-12 and Oct 16-24 holes in the history).
+  const windowDates = [];
+  {
+    let cursor = new Date(`${windowStartIso}T00:00:00.000Z`);
+    const last = new Date(`${end}T00:00:00.000Z`);
+    while (cursor <= last) {
+      windowDates.push(cursor.toISOString().slice(0, 10));
+      cursor = new Date(cursor.getTime() + 86400000);
+    }
+  }
+  const storedDates = windowDates.filter((day) => index.dates.includes(day));
 
-  if (!dates.length) return null;
+  if (!storedDates.length) return null;
 
-  const latestDate = dates[dates.length - 1];
-  const baselineDate = dates[0];
-
-  // Read snapshot files for each date to get players with power
-  const snapshots = await Promise.all(
-    dates.map((date) => readJson(`snapshots/${date}.json`)),
+  // Read snapshot files for each stored day to get players with power. One
+  // slow or missing file must not take the whole page down: it becomes a gap
+  // in the window (handled below), which is what the timeline shows anyway.
+  const storedSnapshots = await Promise.all(
+    storedDates.map((date) => readJson(`snapshots/${date}.json`).catch(() => null)),
   );
+  const snapshotByDate = new Map(storedDates.map((date, i) => [date, storedSnapshots[i]]));
+
+  /**
+   * Whether a day can be trusted.
+   *
+   * A DragonStats snapshot whose `crawledAt` falls on a different day than the
+   * date it is filed under was published from another day's scan (the `--date`
+   * backfill bug): its numbers are a copy, so comparing across it would
+   * produce a fake jump one way and a fake 0 the other. Only DragonStats days
+   * are checked - callofstats history was legitimately scraped days or weeks
+   * after the fact, so a late `crawledAt` is normal there. Untrusted days stay
+   * in the window (the gap is real information) but are excluded from every
+   * calculation and plotted as a break instead of a value.
+   */
+  const meta = windowDates.map((date) => {
+    const snap = snapshotByDate.get(date);
+    if (!snap) return { date, valid: false, reason: 'missing', crawledAt: null };
+    const fromDragon = String(snap.server?.url || '').includes('dragonstats');
+    const crawled = String(snap.crawledAt || '').slice(0, 10);
+    if (fromDragon && crawled && crawled !== date) {
+      return { date, valid: false, reason: 'wrong-scan', crawledAt: snap.crawledAt || null };
+    }
+    return { date, valid: true, reason: null, crawledAt: snap.crawledAt || null };
+  });
+  const validDates = meta.filter((entry) => entry.valid).map((entry) => entry.date);
+  if (!validDates.length) return null;
+
+  const latestDate = validDates[validDates.length - 1];
+  const baselineDate = validDates[0];
+  const gaps = meta.filter((entry) => !entry.valid);
 
   // Collect all unique player IDs across snapshots in the window
   const allPlayerIds = new Set();
-  for (const snap of snapshots) {
+  for (const snap of storedSnapshots) {
     if (snap?.players) {
       for (const p of snap.players) allPlayerIds.add(p.id);
     }
@@ -494,9 +554,9 @@ export async function getLeadershipDashboard() {
 
   // Build per-date player maps from snapshots: date -> Map(playerId -> {power, alliance, name})
   const snapshotData = new Map();
-  for (let i = 0; i < dates.length; i++) {
-    const date = dates[i];
-    const snap = snapshots[i];
+  for (let i = 0; i < storedDates.length; i++) {
+    const date = storedDates[i];
+    const snap = storedSnapshots[i];
     const playersById = new Map();
     if (snap?.players) {
       for (const p of snap.players) {
@@ -504,6 +564,7 @@ export async function getLeadershipDashboard() {
           power: Number(String(p.stats?.Power).replace(/,/g, '')) || null,
           alliance: p.allianceId || null,
           name: p.name,
+          merits: p.merits || null,
         });
       }
     }
@@ -517,12 +578,16 @@ export async function getLeadershipDashboard() {
 
   // Build player entries
   const players = [];
+  let playersWithoutFile = 0;
   for (const [playerId, snapPlayer] of latestSnapPlayers) {
     const file = playerFiles.get(playerId);
-    if (!file) continue;
+    if (!file) {
+      playersWithoutFile += 1;
+      continue;
+    }
 
-    // Gather metrics for each date in the window
-    const observations = dates.map((date, index) => {
+    // Gather metrics for each valid date in the window
+    const observations = validDates.map((date, index) => {
       const m = file.metrics?.[date] || {};
       const snapPlayers = snapshotData.get(date);
       const snapEntry = snapPlayers?.get(playerId);
@@ -614,7 +679,11 @@ export async function getLeadershipDashboard() {
       id: playerId,
       name: snapPlayer.name,
       power: compactNumber(snapPlayer.power),
+      powerFull: snapPlayer.power ?? null,
       powerValue: snapPlayer.power ?? 0,
+      // Per-troop merits for the merit filter/sort (Infantry / Cavalry /
+      // Marksman / Mage), straight from that day's scan.
+      merits: snapPlayer.merits || null,
       activity,
       status,
       powerChange,
@@ -624,7 +693,15 @@ export async function getLeadershipDashboard() {
       merits: current.merits,
       healing: current.healing,
       deaths: current.deaths,
-      alliance: snapPlayer.alliance || 'Not In An Alliance',
+      // One source of truth for the current alliance: the player's own entry
+      // for the window's end date - the exact field the profile page reads -
+      // with the snapshot as the fallback. List, header and detail can no
+      // longer disagree because they read different files.
+      alliance:
+        (typeof file.byDate?.[latestDate]?.alliance === 'string' &&
+          file.byDate[latestDate].alliance.trim()) ||
+        snapPlayer.alliance ||
+        'Not In An Alliance',
       row:
         rowMetrics.score !== null ||
         rowMetrics.wins !== null ||
@@ -648,42 +725,87 @@ export async function getLeadershipDashboard() {
   const highActivity = players.filter(
     (player) => player.activity === 'Highly Active' || player.activity === 'Active',
   ).length;
+  const dormant = players.filter((player) => player.activity === 'Dormant').length;
+  const coreFighters = players.filter((player) => player.activity === 'Highly Active').length;
+  const support = players.filter((player) => player.status === 'Support').length;
+  const monitor = players.filter((player) => player.status === 'Monitor').length;
   const kingdomPower = players.reduce((sum, player) => sum + (player.powerValue || 0), 0);
 
-  // Previous power from baseline snapshot
+  /**
+   * Baseline power over the same cohort as the current total, so the % change
+   * compares like with like (a lord who arrived mid-window is on neither side)
+   * and can be quoted with its value and date next to it.
+   */
   let previousPower = 0;
+  let previousPowerKnown = false;
   if (baselineSnapPlayers) {
-    for (const entry of baselineSnapPlayers.values()) {
-      if (entry.power) previousPower += entry.power;
+    for (const player of players) {
+      const entry = baselineSnapPlayers.get(player.id);
+      if (entry?.power) {
+        previousPower += entry.power;
+        previousPowerKnown = true;
+      }
     }
   }
+  const powerChangeValue =
+    previousPowerKnown && previousPower > 0
+      ? ((kingdomPower - previousPower) / previousPower) * 100
+      : null;
 
-  const sumChange = (key) => players.reduce((sum, player) => sum + (player.changes[key] || 0), 0);
+  /**
+   * A change is null when there is nothing to compare, never 0: showing 0 for
+   * "no data" is what made every leader's table read flat. Sums skip nulls and
+   * stay null when no player has data at all.
+   */
+  const sumChange = (key) => {
+    const values = players
+      .map((player) => player.changes[key])
+      .filter((value) => value !== null && value !== undefined);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  };
+  const powerChanges = players
+    .map((player) => player.powerChange)
+    .filter((value) => value !== null && value !== undefined);
   const recentChanges = {
-    power: players.reduce((sum, player) => sum + (player.powerChange || 0), 0),
+    power: powerChanges.length ? powerChanges.reduce((sum, value) => sum + value, 0) : null,
     kills: sumChange('kills'),
     deaths: sumChange('deaths'),
     healing: sumChange('healing'),
     merits: sumChange('merits'),
   };
 
-  // Activity timeline: per date, count players who progressed vs previous date
-  const activityTimeline = dates.map((date, index) => {
-    if (index === 0) {
-      return { date, activePlayers: 0 };
+  /**
+   * Activity timeline: per date, players who progressed since the previous
+   * date. A date with no snapshot, or one published from another day's scan,
+   * is a gap: `activePlayers` is null so the chart breaks there instead of
+   * drawing a 0 that never happened. The first date has nothing to compare
+   * against and is null for the same reason.
+   */
+  const activityTimeline = meta.map((entry, index) => {
+    if (!entry.valid) {
+      return { date: entry.date, activePlayers: null, gap: true, reason: entry.reason };
     }
-    const previousDate = dates[index - 1];
+    if (index === 0) {
+      return { date: entry.date, activePlayers: null, gap: false, reason: 'first' };
+    }
+    const previous = meta[index - 1];
+    if (!previous.valid) {
+      // No trustworthy day to compare against: a multi-day jump counted as
+      // one day would be as misleading as a 0.
+      return { date: entry.date, activePlayers: null, gap: true, reason: 'after-gap' };
+    }
+    const previousDate = previous.date;
     let activePlayers = 0;
     for (const [, file] of playerFiles) {
-      const currentM = file.metrics?.[date] || {};
+      const currentM = file.metrics?.[entry.date] || {};
       const previousM = file.metrics?.[previousDate] || {};
       const currentPower = currentM['Current Power'] ?? null;
       const previousPowerVal = previousM['Current Power'] ?? null;
 
       const progressed = ['Units Killed', 'Merits', 'Units Healed'].some((label) => {
         const current = currentM[label];
-        const previous = previousM[label];
-        return current !== null && previous !== null && current > previous;
+        const before = previousM[label];
+        return current !== null && before !== null && current > before;
       });
 
       if (
@@ -695,21 +817,42 @@ export async function getLeadershipDashboard() {
         activePlayers += 1;
       }
     }
-    return { date, activePlayers };
+    return { date: entry.date, activePlayers, gap: false, reason: null };
   });
+
+  const latestMeta = meta.find((entry) => entry.date === latestDate);
 
   return {
     server: number,
     snapshotDate: latestDate,
-    periodStart: baselineDate,
-    periodEnd: latestDate,
-    snapshotCount: dates.length,
+    periodStart: windowDates[0],
+    periodEnd: windowDates[windowDates.length - 1],
+    snapshotCount: validDates.length,
+    // The date picker lists every stored snapshot, exactly like the public
+    // home page's picker; `requestedDate` is the pinned end date (null = the
+    // newest window) and `isLatest` tells the UI whether to badge it.
+    availableDates: index.dates,
+    requestedDate: wanted,
+    isLatest: !wanted || wanted === index.dates[0],
+    snapshotHealth: {
+      lastSnapshot: latestDate,
+      lastCrawledAt: latestMeta?.crawledAt || null,
+      count: validDates.length,
+      total: windowDates.length,
+      gaps: gaps.map((entry) => ({ date: entry.date, reason: entry.reason })),
+      // A lord in the snapshot whose history file could not be read is left
+      // out of every bucket; when that happens the page says so instead of
+      // quietly showing a smaller kingdom.
+      playersWithoutFile,
+    },
     kingdom: {
       power: compactNumber(kingdomPower),
+      powerFull: kingdomPower,
       powerChange:
-        previousPower > 0
-          ? `${(((kingdomPower - previousPower) / previousPower) * 100).toFixed(1)}%`
-          : '—',
+        powerChangeValue === null ? '—' : `${powerChangeValue.toFixed(1)}%`,
+      powerChangeValue,
+      baselinePower: previousPowerKnown ? previousPower : null,
+      baselineDate: previousPowerKnown ? baselineDate : null,
       lords: players.length,
       lordChange: baselineSnapPlayers
         ? players.length - baselineSnapPlayers.size
@@ -717,11 +860,10 @@ export async function getLeadershipDashboard() {
       activity: highActivity ? 'High' : 'Low',
     },
     activityCounts: {
-      active: players.filter(
-        (player) => player.activity === 'Active' || player.activity === 'Highly Active',
-      ).length,
+      active: highActivity,
       low: lowActivity,
-      dormant: players.filter((player) => player.activity === 'Dormant').length,
+      dormant,
+      total: players.length,
     },
     recentChanges,
     activityTimeline,
@@ -734,18 +876,24 @@ export async function getLeadershipDashboard() {
         ? `${highPowerLowActivity} high-power players have shown very low recent activity`
         : 'No high-power inactivity threshold has been triggered',
       `${lowActivity} players have no measurable progression in the latest scan`,
-      dates.length === 1
+      validDates.length === 1
         ? 'A second snapshot this week is required for change detection'
-        : `Changes are aggregated from ${dates.length} snapshot${dates.length === 1 ? '' : 's'} this week`,
+        : `Changes are aggregated from ${validDates.length} of ${windowDates.length} days this week`,
       `${highActivity} players showed measurable combat or merit growth`,
     ],
+    /**
+     * Activity buckets are mutually exclusive and sum to the lord total;
+     * `support` / `coreFighters` / `monitor` are *roles* derived from the
+     * same activity and are reported separately so nothing is counted twice.
+     */
     readiness: {
-      ready: players.filter(
-        (player) => player.activity === 'Highly Active' || player.activity === 'Active',
-      ).length,
-      support: players.filter((player) => player.status === 'Support').length,
+      total: players.length,
+      active: highActivity,
       lowActivity,
-      dormant: players.filter((player) => player.activity === 'Dormant').length,
+      dormant,
+      coreFighters,
+      support,
+      monitor,
     },
     players: players.sort((a, b) => b.powerValue - a.powerValue),
   };

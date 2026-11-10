@@ -3,6 +3,8 @@ import { ArrowLeft, Coins, History, Scale, Shield, Skull, Swords } from 'lucide-
 import { notFound } from 'next/navigation';
 import { readLeadership, readPlayer } from '../../../../lib/roster';
 
+const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
+
 function Change({ label, value }) {
   return (
     <div className="bg-discord-bg-darker px-3 py-3">
@@ -10,6 +12,9 @@ function Change({ label, value }) {
       <p className={`mt-1 font-mono text-sm ${value > 0 ? 'text-amber-200' : 'text-gray-300'}`}>
         {value === null || value === undefined ? '—' : `${value > 0 ? '+' : ''}${Number(value).toLocaleString()}`}
       </p>
+      {value === null || value === undefined ? (
+        <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-gray-700">no data</p>
+      ) : null}
     </div>
   );
 }
@@ -34,6 +39,7 @@ function AdvancedWarStats({ section }) {
     'T4/T5 Units Dead',
     'T4/T5 Units Rss Healed',
   ].includes(row.label));
+  if (!rows.length) return null;
   return (
     <section className="rounded-md border border-gray-800 bg-discord-bg-darker p-4">
       <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-400">Advanced War Stats</h2>
@@ -43,7 +49,7 @@ function AdvancedWarStats({ section }) {
             {icons[row.label] || <span className="flex h-8 w-8 items-center justify-center rounded border border-gray-700 font-mono text-[10px] text-white">•</span>}
             <div className="min-w-0">
               <p className="text-xs leading-tight text-gray-400">{row.label}</p>
-              <p className="mt-1 font-mono text-sm text-gray-200">{row.value}</p>
+              <p className="mt-1 font-mono text-sm text-gray-200">{row.value ?? 'No data'}</p>
             </div>
           </div>
         ))}
@@ -74,7 +80,7 @@ function WarStats({ section }) {
             <div key={row.label} className="bg-discord-bg-darker px-3 py-3">
               <Icon className="h-7 w-7 text-white" strokeWidth={1.7} />
               <p className="mt-2 text-xs text-gray-400">{row.label}</p>
-              <p className="mt-1 font-mono text-sm text-neutral-100">{row.value}</p>
+              <p className="mt-1 font-mono text-sm text-neutral-100">{row.value ?? 'No data'}</p>
             </div>
           );
         })}
@@ -83,14 +89,19 @@ function WarStats({ section }) {
   );
 }
 
-function LeadershipPlayerView({ profile, player, dashboard }) {
+function LeadershipPlayerView({ profile, player, dashboard, date }) {
   const changes = player.changes || {};
   const warStats = profile.sections?.find((section) => section.section === 'War Stats');
   const advancedWarStats = profile.sections?.find((section) => section.section === 'Advanced War Stats');
   const sourceSections = (profile.sections || []).filter((section) => section.rows?.length && !['War Stats', 'Advanced War Stats'].includes(section.section));
+  const backHref = date ? `/leadership?date=${encodeURIComponent(date)}` : '/leadership';
+  // One snapshot date for the whole page: the profile's own capture date is
+  // what the public roster page shows for the same player, so the two views
+  // can never stamp different days.
+  const snapshotDate = profile.snapshotDate;
   return (
     <div className="space-y-5">
-      <Link href="/leadership" className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500 transition hover:text-amber-200">
+      <Link href={backHref} className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gray-500 transition hover:text-amber-200">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to leadership
       </Link>
       <section className="overflow-hidden rounded-md border border-gray-800 bg-discord-bg-darker">
@@ -99,16 +110,23 @@ function LeadershipPlayerView({ profile, player, dashboard }) {
             <div className="min-w-0">
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-600">Leadership player profile</p>
               <h1 className="mt-1 truncate text-2xl font-semibold text-neutral-100">{profile.name}</h1>
-              <p className="mt-1 font-mono text-[10px] text-gray-600">Game ID #{profile.id} · Server {dashboard.server}</p>
+              <p className="mt-1 font-mono text-[10px] text-gray-600">Game ID #{profile.id} · Server {dashboard.server} · Snapshot {snapshotDate}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-200">{player.activity}</span>
-                <span className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-300">{player.status}</span>
-                <span className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-[10px] text-gray-400">{player.activityDays} active intervals</span>
+                <span className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-300" title="Role derived from the activity band: Core Fighter = Highly Active, Support = Active, Monitor = Low Activity.">{player.status}</span>
+                <span className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-[10px] text-gray-400" title="Snapshot intervals in the window where the player showed measurable progression (any rise in kills, merits, healing or power).">{player.activityDays} active intervals of {Math.max(0, (dashboard.snapshotCount || 1) - 1)}</span>
                 <span className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 text-xs text-gray-400">{player.alliance}</span>
+                <Link
+                  href={`/roster/player/${encodeURIComponent(profile.id)}${date ? `?date=${encodeURIComponent(date)}` : ''}`}
+                  className="rounded border border-gray-700/70 bg-gray-500/5 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300/90 transition hover:border-amber-400/60 hover:text-amber-200"
+                  title="Open the full profile: levels, city and season levels, troop tiers, fighting record and milestones"
+                >
+                  Full profile →
+                </Link>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:min-w-52">
-              <div className="bg-discord-bg-darker px-3 py-2"><p className="font-mono text-[9px] uppercase text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-amber-200">{player.power}</p></div>
+              <div className="bg-discord-bg-darker px-3 py-2"><p className="font-mono text-[9px] uppercase text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-amber-200" title={player.powerFull != null ? Number(player.powerFull).toLocaleString('en-US') : undefined}>{player.powerFull != null ? Number(player.powerFull).toLocaleString('en-US') : player.power}</p></div>
               <div className="bg-discord-bg-darker px-3 py-2"><p className="font-mono text-[9px] uppercase text-gray-600">Rank</p><p className="mt-1 font-mono text-sm text-gray-300">#{profile.rank || '—'}</p></div>
             </div>
           </div>
@@ -128,15 +146,20 @@ function LeadershipPlayerView({ profile, player, dashboard }) {
           <div><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">Previous names</p><p className="mt-2 text-sm text-gray-400">{profile.previousNames?.length ? profile.previousNames.join(' · ') : 'No previous names recorded.'}</p></div>
         </div>
       </section>
-      {sourceSections.length ? <section className="rounded-md border border-gray-800 bg-discord-bg-darker p-4"><div className="flex items-center gap-2"><Shield className="h-4 w-4 text-gray-500" /><h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-400">Source metrics</h2></div><div className="mt-3 grid gap-4 md:grid-cols-2">{sourceSections.map((section) => <div key={section.section || 'profile'}><h3 className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">{section.section || 'Profile'}</h3><dl className="mt-2 divide-y divide-gray-800">{section.rows.slice(0, 12).map((row) => <div key={row.label} className="flex justify-between gap-3 py-1.5 text-xs"><dt className="truncate text-gray-400">{row.label}</dt><dd className="font-mono text-gray-200">{row.value}</dd></div>)}</dl></div>)}</div></section> : null}
+      {sourceSections.length ? <section className="rounded-md border border-gray-800 bg-discord-bg-darker p-4"><div className="flex items-center gap-2"><Shield className="h-4 w-4 text-gray-500" /><h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-gray-400">Source metrics</h2></div><div className="mt-3 grid gap-4 md:grid-cols-2">{sourceSections.map((section) => <div key={section.section || 'profile'}><h3 className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">{section.section || 'Profile'}</h3><dl className="mt-2 divide-y divide-gray-800">{section.rows.slice(0, 12).map((row) => <div key={row.label} className="flex justify-between gap-3 py-1.5 text-xs"><dt className="truncate text-gray-400">{row.label}</dt><dd className="font-mono text-gray-200">{row.value ?? 'No data'}</dd></div>)}</dl></div>)}</div></section> : null}
     </div>
   );
 }
 
-export default async function LeadershipPlayerPage({ params }) {
+export default async function LeadershipPlayerPage({ params, searchParams }) {
   const { id } = await params;
-  const [profile, dashboard] = await Promise.all([readPlayer(id), readLeadership()]);
+  const sp = await searchParams;
+  const date = sp?.date && DATE_PARAM.test(String(sp.date)) ? String(sp.date) : null;
+  const [profile, dashboard] = await Promise.all([
+    readPlayer(id, date),
+    readLeadership({ endDate: date }),
+  ]);
   const player = dashboard?.players?.find((item) => item.id === String(id));
   if (!profile || !dashboard || !player) notFound();
-  return <LeadershipPlayerView profile={profile} player={player} dashboard={dashboard} />;
+  return <LeadershipPlayerView profile={profile} player={player} dashboard={dashboard} date={dashboard.requestedDate || date} />;
 }

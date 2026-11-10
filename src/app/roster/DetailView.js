@@ -61,8 +61,15 @@ export default function DetailView({ kind, data }) {
   const castleX = castleRow('Castle X');
   const castleY = castleRow('Castle Y');
   const castleServer = castleRow('Castle Server');
+  // `castleRow` returns undefined when the day has no such row (every
+  // callofstats day, and any DragonStats day without castle fields). The old
+  // guard compared against null only, so undefined slipped through and the
+  // line rendered as "K: UNDEFINED, X: UNDEFINED, Y: UNDEFINED" in the
+  // uppercase mono style. A coordinate line needs all three values; without
+  // them the line is simply not shown.
+  const present = (value) => value !== null && value !== undefined && String(value).trim() !== '';
   const castleCoords =
-    castleX !== null && castleY !== null && castleServer !== null
+    present(castleX) && present(castleY) && present(castleServer)
       ? `K: ${castleServer}, X: ${castleX}, Y: ${castleY}`
       : null;
   // The source's own Profile block: it reads like a caption for the account, so

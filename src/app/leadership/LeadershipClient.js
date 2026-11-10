@@ -3,18 +3,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Info, Search } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { ArrowLeft, ArrowRight, BookOpen, Download, Info, MessageCircle, RefreshCw, Search } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { deleteSavedRowRoster, getSettings, updateSettings } from '../../lib/api';
+import MeritFilter, { MERIT_TYPES } from '../../components/home/MeritFilter';
+import RosterSearch from '../../components/home/RosterSearch';
+import RosterSection from '../../components/home/RosterSection';
+import ServerStats from '../../components/home/ServerStats';
+import { buildSuggestions } from '../../components/home/suggestions';
+import LanguageButton from '../../components/i18n/LanguageButton';
+import Onboarding from '../../components/i18n/Onboarding';
 
 const PAGE_SIZE = 25;
 const MAX_TEAM_PLAYERS = 30;
 const MAX_TEAM_RESERVES = 15;
 const ROW_DRAFT_STORAGE_KEY = 'phoenix-herald:row-roster-draft';
 
+// Same destinations the public header offers (components/Layout/Header.js).
+const DISCORD_INVITE = 'https://discord.gg/kwAc6xpgGa';
+const GUIDES_URL = 'https://phw-973-two.vercel.app/';
+
 const TABS = [
   ['overview', 'Overview'],
   ['players', 'Players'],
+  ['alliances', 'Alliances'],
   ['row', 'RoW'],
 ];
 
@@ -26,6 +38,22 @@ const number = (value) => {
   const divisor = suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : suffix === 'K' ? 1e3 : 1;
   return `${sign}${(value / divisor).toFixed(suffix ? 1 : 0)}${suffix}`;
 };
+
+/**
+ * Full precision for anything a leader might quote or compare: tables, deltas
+ * and detail views. The rounded `number()` above stays for headline cards,
+ * where 5.11B reads better than 5,109,059,641 - but a table row comparing two
+ * close lords cannot be rounded.
+ */
+const full = (value, { signed = false } = {}) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  const n = Number(value);
+  return signed && n > 0 ? `+${n.toLocaleString('en-US')}` : n.toLocaleString('en-US');
+};
+
+/** The window's activity thresholds, quoted wherever activity is explained. */
+const ACTIVITY_DEFINITION =
+  'Bands by active intervals in the window (an interval counts when kills, merits, healing or power rose between two snapshots): Highly Active ≥6, Active 4–5, Low Activity 1–3, Dormant 0.';
 
 function Card({ title, children }) {
   return (
@@ -48,13 +76,15 @@ function SectionHeading({ eyebrow, title, description }) {
   );
 }
 
-function PlayerTable({ players }) {
+function PlayerTable({ players, snapshotDate }) {
   const router = useRouter();
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [selectedAlliances, setSelectedAlliances] = useState([]);
   const [sort, setSort] = useState('power');
   const [page, setPage] = useState(1);
+  const [meritTypes, setMeritTypes] = useState([]);
+  const [meritOrder, setMeritOrder] = useState('desc');
   const alliances = useMemo(
     () => [...new Set(players.map((player) => player.alliance).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [players],
@@ -69,13 +99,24 @@ function PlayerTable({ players }) {
       return true;
     }).filter((player) => selectedAlliances.length === 0 || selectedAlliances.includes(player.alliance))
       .filter((player) => !normalizedQuery || [player.name, player.id, player.alliance].some((value) => String(value || '').toLowerCase().includes(normalizedQuery)));
+    // A merit selection orders by the total of the chosen troop types (the
+    // RoW team-building view); highest-first by default, same as the public
+    // home page's merit filter.
+    if (meritTypes.length) {
+      const meritSum = (player) =>
+        meritTypes.reduce((sum, key) => sum + (Number(player.merits?.[key]) || 0), 0);
+      const direction = meritOrder === 'asc' ? 1 : -1;
+      return result.sort(
+        (a, b) => direction * (meritSum(a) - meritSum(b)) || b.powerValue - a.powerValue,
+      );
+    }
     return result.sort((a, b) => {
       if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'activity') return b.activityDays - a.activityDays || b.powerValue - a.powerValue;
       if (sort === 'kills') return (b.changes.kills || 0) - (a.changes.kills || 0);
       return b.powerValue - a.powerValue;
     });
-  }, [filter, players, query, selectedAlliances, sort]);
+  }, [filter, meritOrder, meritTypes, players, query, selectedAlliances, sort]);
   useEffect(() => {
     setPage(1);
   }, [filter, query, selectedAlliances, sort]);
@@ -84,6 +125,41 @@ function PlayerTable({ players }) {
   const firstResult = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
   const lastResult = Math.min(page * PAGE_SIZE, filtered.length);
   const filters = [['all', 'All'], ['high', 'Highly Active'], ['active', 'Active'], ['low', 'Low Activity'], ['dormant', 'Dormant']];
+
+  /**
+   * The filtered table, exactly as filtered, as a CSV - the offline copy a
+   * leader can paste into a war plan or share. Values are written at full
+   * precision, not as they are rounded on screen.
+   */
+  const exportCsv = () => {
+    const header = [
+      'Player', 'Game ID', 'Alliance', 'Power', 'Activity', 'Active intervals',
+      'Kill change', 'Death change', 'Healing change', 'Merit change',
+    ];
+    const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = filtered.map((player) => [
+      player.name,
+      player.id,
+      player.alliance,
+      player.powerFull ?? '',
+      player.activity,
+      player.activityDays,
+      player.changes.kills ?? '',
+      player.changes.deaths ?? '',
+      player.changes.healing ?? '',
+      player.changes.merits ?? '',
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(escape).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `leadership-players-${snapshotDate || 'latest'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <Card title="Player changes">
@@ -127,12 +203,29 @@ function PlayerTable({ players }) {
           <option value="name">Sort: Name</option>
         </select>
       </div>
-      <div className="mt-3 flex gap-1.5 overflow-x-auto border-b border-gray-800 pb-3">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-b border-gray-800 pb-3">
         {filters.map(([key, label]) => (
           <button key={key} type="button" onClick={() => setFilter(key)} className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] ${filter === key ? 'border-transparent bg-gray-100 text-neutral-950' : 'border-gray-800 text-gray-500'}`}>
             {label}
           </button>
         ))}
+        <span className="mx-1 hidden h-4 w-px bg-gray-800 sm:block" />
+        <MeritFilter
+          value={meritTypes}
+          onChange={setMeritTypes}
+          order={meritOrder}
+          onOrderChange={setMeritOrder}
+        />
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={!filtered.length}
+          className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded border border-gray-800 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+          title="Export the filtered table as CSV"
+        >
+          <Download className="h-3 w-3" />
+          Export CSV
+        </button>
       </div>
       <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">
         Showing {filtered.length} of {players.length} players
@@ -160,12 +253,12 @@ function PlayerTable({ players }) {
                 className="cursor-pointer text-xs hover:bg-gray-500/[0.03] focus:bg-gray-500/[0.06] focus:outline-none"
               >
                 <td className="px-3 py-3"><Link href={`/leadership/player/${encodeURIComponent(player.id)}`} className="text-neutral-100 transition hover:text-amber-300">{player.name}</Link><p className="font-mono text-[10px] text-gray-600">#{player.id}</p></td>
-                <td className="px-3 py-3 font-mono text-amber-200">{player.power}</td>
-                <td className="px-3 py-3 text-gray-300"><p>{player.activity}</p><p className="font-mono text-[10px] text-gray-600">{player.activityDays} active intervals</p></td>
-                <td className="px-3 py-3 font-mono text-emerald-300">{number(player.changes.kills)}</td>
-                <td className="px-3 py-3 font-mono text-gray-400">{number(player.changes.deaths)}</td>
-                <td className="px-3 py-3 font-mono text-emerald-300">{number(player.changes.healing)}</td>
-                <td className="px-3 py-3 font-mono text-emerald-300">{number(player.changes.merits)}</td>
+                <td className="px-3 py-3 font-mono text-amber-200" title={player.powerFull != null ? `${full(player.powerFull)} power` : undefined}>{player.powerFull != null ? full(player.powerFull) : player.power}</td>
+                <td className="px-3 py-3 text-gray-300" title={ACTIVITY_DEFINITION}><p>{player.activity}</p><p className="font-mono text-[10px] text-gray-600">{player.activityDays} active interval{player.activityDays === 1 ? '' : 's'}</p></td>
+                <td className="px-3 py-3 font-mono text-emerald-300" title={player.changes.kills === null ? 'No change data for this window' : undefined}>{full(player.changes.kills, { signed: true })}</td>
+                <td className="px-3 py-3 font-mono text-gray-400" title={player.changes.deaths === null ? 'No change data for this window' : undefined}>{full(player.changes.deaths, { signed: true })}</td>
+                <td className="px-3 py-3 font-mono text-emerald-300" title={player.changes.healing === null ? 'No change data for this window' : undefined}>{full(player.changes.healing, { signed: true })}</td>
+                <td className="px-3 py-3 font-mono text-emerald-300" title={player.changes.merits === null ? 'No change data for this window' : undefined}>{full(player.changes.merits, { signed: true })}</td>
               </tr>
             ))}
           </tbody>
@@ -211,9 +304,9 @@ function Overview({ data }) {
   const activePercent = Math.round((data.activityCounts.active / total) * 100);
   const highlyActive = data.players.filter((player) => player.activity === 'Highly Active').length;
   const activityBands = [
-    { name: 'Highly active', players: highlyActive, fill: '#fbbf24' },
+    { name: 'Highly Active', players: highlyActive, fill: '#fbbf24' },
     { name: 'Active', players: data.activityCounts.active - highlyActive, fill: '#a1a1aa' },
-    { name: 'Low activity', players: data.activityCounts.low, fill: '#71717a' },
+    { name: 'Low Activity', players: data.activityCounts.low, fill: '#71717a' },
     { name: 'Dormant', players: data.activityCounts.dormant, fill: '#3f3f46' },
   ];
   const killMovers = data.biggestKillGrowth.slice(0, 5).map((player) => ({
@@ -227,6 +320,14 @@ function Overview({ data }) {
     ['Healing', data.recentChanges.healing, 'text-gray-200'],
     ['Merits', data.recentChanges.merits, 'text-gray-200'],
   ];
+  const health = data.snapshotHealth;
+  const gapReason = (reason) =>
+    reason === 'missing' ? 'no snapshot stored'
+    : reason === 'wrong-scan' ? 'snapshot holds another day’s data'
+    : reason === 'after-gap' ? 'no previous snapshot to compare against'
+    : 'no usable snapshot';
+  const gapDates = (data.activityTimeline || []).filter((point) => point.gap);
+  const topKillGrowth = data.biggestKillGrowth[0];
   return (
     <div className="space-y-5">
       <Card title="Kingdom activity">
@@ -237,8 +338,24 @@ function Overview({ data }) {
             <div className="my-1 flex items-center gap-2 text-gray-700"><span className="h-px flex-1 bg-gray-800" /><span className="text-[10px]">to</span><span className="h-px flex-1 bg-gray-800" /></div>
             <p className="font-mono text-sm text-gray-200">{data.periodEnd}</p>
             <div className="mt-4 flex gap-4 border-t border-gray-800 pt-3">
-              <div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshots</p><p className="mt-1 font-mono text-sm text-gray-300">{data.snapshotCount}</p></div>
+              <div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshots</p><p className="mt-1 font-mono text-sm text-gray-300" title={health ? `${health.count} usable of ${health.total} stored in this window` : undefined}>{data.snapshotCount}{health && health.total !== health.count ? ` / ${health.total}` : ''}</p></div>
               <div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Lords</p><p className="mt-1 font-mono text-sm text-gray-300">{data.kingdom.lords}</p></div>
+            </div>
+            {/* Data freshness in one line: leaders should not have to dig. */}
+            <div className="mt-4 border-t border-gray-800 pt-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshot health</p>
+              <p className="mt-1 font-mono text-[11px] text-gray-400">Last snapshot: {health?.lastSnapshot || data.snapshotDate}</p>
+              <p className="mt-1 font-mono text-[11px] text-gray-500">{health ? `${health.count} usable of ${health.total} in window` : ''}</p>
+              {gapDates.length ? (
+                <p className="mt-1 font-mono text-[11px] text-amber-300/80">
+                  Gaps: {gapDates.map((point) => `${point.date.slice(5)} (${gapReason(point.reason)})`).join(', ')}
+                </p>
+              ) : <p className="mt-1 font-mono text-[11px] text-emerald-400/70">No gaps in this window</p>}
+              {health?.playersWithoutFile ? (
+                <p className="mt-1 font-mono text-[11px] text-amber-300/80">
+                  {health.playersWithoutFile} lord{health.playersWithoutFile === 1 ? '' : 's'} in the snapshot could not be loaded and {health.playersWithoutFile === 1 ? 'is' : 'are'} excluded from totals
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="rounded-md border border-gray-800 bg-gray-500/[0.03] p-4">
@@ -251,41 +368,76 @@ function Overview({ data }) {
               <div className="rounded border border-gray-800 px-3 py-2"><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Low activity</p><p className="mt-1 font-mono text-sm text-gray-300">{data.activityCounts.low}</p></div>
               <div className="rounded border border-gray-800 px-3 py-2"><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Dormant</p><p className="mt-1 font-mono text-sm text-gray-300">{data.activityCounts.dormant}</p></div>
             </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-gray-600" title={ACTIVITY_DEFINITION}>{ACTIVITY_DEFINITION}</p>
           </div>
         </div>
       </Card>
       <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
         <Card title="Kingdom summary">
           <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-800 bg-gray-800 sm:grid-cols-3">
-            <div className="col-span-2 bg-discord-bg-darker p-4 sm:col-span-1"><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">Kingdom power</p><p className="mt-2 text-xl font-semibold text-amber-200">{data.kingdom.power}</p><p className="mt-1 font-mono text-[10px] text-gray-500">{data.kingdom.powerChange} from baseline</p></div>
-            {changes.slice(1).map(([label, value, color]) => <div key={label} className="bg-discord-bg-darker p-4"><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">{label} change</p><p className={`mt-2 text-lg font-semibold ${color}`}>{number(value)}</p></div>)}
+            <div className="col-span-2 bg-discord-bg-darker p-4 sm:col-span-1">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">Kingdom power</p>
+              <p className="mt-2 text-xl font-semibold text-amber-200" title={data.kingdom.powerFull != null ? full(data.kingdom.powerFull) : undefined}>{data.kingdom.power}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-gray-600">{data.kingdom.powerFull != null ? full(data.kingdom.powerFull) : ''}</p>
+              <p className="mt-1 font-mono text-[10px] text-gray-500">
+                {data.kingdom.powerChangeValue === null || data.kingdom.powerChangeValue === undefined
+                  ? 'no baseline in this window'
+                  : `${data.kingdom.powerChange} vs baseline ${full(data.kingdom.baselinePower)} on ${data.kingdom.baselineDate}`}
+              </p>
+            </div>
+            {changes.slice(1).map(([label, value, color]) => <div key={label} className="bg-discord-bg-darker p-4"><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">{label} change</p><p className={`mt-2 text-lg font-semibold ${color}`} title={value === null ? 'No change data in this window' : undefined}>{full(value, { signed: true })}</p>{value === null ? <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-gray-700">no data</p> : null}</div>)}
           </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-gray-600">Change totals are summed over the window from the first usable snapshot to the last; a blank means the window has no pair to compare, not zero.</p>
         </Card>
         <Card title="Attention required">
           <div className="mt-3 space-y-2">
             {data.activityCounts.dormant > 0 ? <div className="rounded-md border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5"><p className="text-sm text-gray-300">{data.activityCounts.dormant} dormant players need review</p><p className="mt-1 text-xs text-gray-500">Open Players and filter by Dormant to review them.</p></div> : null}
             {data.activityCounts.low > 0 ? <div className="rounded-md border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5"><p className="text-sm text-gray-300">{data.activityCounts.low} players are showing low activity</p><p className="mt-1 text-xs text-gray-500">Check whether their recent progression needs follow-up.</p></div> : null}
-            {data.biggestKillGrowth[0] ? <div className="rounded-md border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5"><p className="text-sm text-gray-300">{data.biggestKillGrowth[0].name} leads kill growth at {number(data.biggestKillGrowth[0].changes.kills)}</p><p className="mt-1 text-xs text-gray-500">Use the Players tab to compare the leading contributors.</p></div> : null}
-            {!data.activityCounts.dormant && !data.activityCounts.low && !data.biggestKillGrowth[0] ? <p className="py-3 text-sm text-gray-500">No follow-up items were detected for this reporting window.</p> : null}
+            {topKillGrowth && (topKillGrowth.changes.kills || 0) > 0 ? <div className="rounded-md border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5"><p className="text-sm text-gray-300">{topKillGrowth.name} leads kill growth at {full(topKillGrowth.changes.kills, { signed: true })}</p><p className="mt-1 text-xs text-gray-500">Use the Players tab to compare the leading contributors.</p></div> : null}
+            {!data.activityCounts.dormant && !data.activityCounts.low && !(topKillGrowth && (topKillGrowth.changes.kills || 0) > 0) ? <p className="py-3 text-sm text-gray-500">No follow-up items were detected for this reporting window.</p> : null}
           </div>
         </Card>
       </div>
       <Card title="Server activity trend">
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures.</p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">{data.activityTimeline?.length || 0} snapshots</p>
+          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures. Each point is labelled; a break in the line means no usable snapshot that day, never zero activity.</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">{data.activityTimeline?.length || 0} days</p>
         </div>
         {data.activityTimeline?.length > 1 ? <div className="mt-3 h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data.activityTimeline} margin={{ top: 12, right: 12, left: 0, bottom: 4 }}>
+            <LineChart data={data.activityTimeline} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid stroke="#2b2d31" vertical={false} />
               <XAxis dataKey="date" tick={{ fill: '#71717a', fontSize: 10 }} tickFormatter={(value) => value.slice(5)} axisLine={false} tickLine={false} />
               <YAxis allowDecimals={false} width={32} tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(value) => [`${value} players`, 'Active players']} labelFormatter={(value) => `Snapshot ${value}`} contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }} labelStyle={{ color: '#d1d5db' }} itemStyle={{ color: '#fbbf24' }} />
-              <Line type="monotone" dataKey="activePlayers" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#fbbf24' }} />
+              <Tooltip
+                formatter={(value, name, props) => [
+                  value === null || value === undefined
+                    ? `No usable snapshot (${gapReason(props.payload.reason)})`
+                    : `${value} players`,
+                  'Active players',
+                ]}
+                labelFormatter={(value) => `Snapshot ${value}`}
+                contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }}
+                labelStyle={{ color: '#d1d5db' }}
+                itemStyle={{ color: '#fbbf24' }}
+              />
+              <Line type="monotone" dataKey="activePlayers" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#fbbf24' }}>
+                <LabelList
+                  dataKey="activePlayers"
+                  content={({ x, y, value }) =>
+                    value === null || value === undefined || x === undefined ? null : (
+                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
+                    )}
+                />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
         </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">At least two snapshots are required to show the activity trend.</p>}
+        {gapDates.length ? (
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300/80">
+            Breaks: {gapDates.map((point) => `${point.date} — ${gapReason(point.reason)}`).join(' · ')}
+          </p>
+        ) : null}
       </Card>
       <Card title="Activity intelligence">
         <div className="mt-3 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
@@ -310,13 +462,15 @@ function Overview({ data }) {
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-600">Top kill growth</p>
             <div className="mt-2 h-52 w-full">
               {killMovers.length ? <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={killMovers} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
+                <BarChart data={killMovers} layout="vertical" margin={{ top: 4, right: 76, left: 8, bottom: 4 }}>
                   <defs><linearGradient id="killGrowthGradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#b7791f" /><stop offset="100%" stopColor="#fbbf24" /></linearGradient></defs>
                   <CartesianGrid horizontal={false} stroke="#2b2d31" />
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={82} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} formatter={(value) => number(value)} contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }} labelStyle={{ color: '#d1d5db' }} />
-                  <Bar dataKey="kills" fill="url(#killGrowthGradient)" radius={[0, 4, 4, 0]} barSize={20} animationDuration={900} />
+                  <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} formatter={(value) => [full(value), 'Kill change']} contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }} labelStyle={{ color: '#d1d5db' }} />
+                  <Bar dataKey="kills" fill="url(#killGrowthGradient)" radius={[0, 4, 4, 0]} barSize={20} animationDuration={900}>
+                    <LabelList dataKey="kills" position="right" formatter={(value) => full(value)} style={{ fill: '#d1d5db', fontSize: 10, fontFamily: 'monospace' }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer> : <p className="py-8 text-sm text-gray-600">No kill growth recorded in this window.</p>}
             </div>
@@ -328,21 +482,36 @@ function Overview({ data }) {
 }
 
 function Players({ data }) {
+  // Mutually exclusive activity buckets: they sum to the lord total, so the
+  // cards can be added up against the Overview and the public server count.
+  // Roles (Core Fighter / Support / Monitor) describe the same players and
+  // are spelled out below instead of being counted as a fourth bucket - that
+  // double count is what made the cards total 305 against 304 lords.
   const readiness = [
-    ['Combat active', data.readiness.ready, 'text-emerald-300'],
-    ['Support', data.readiness.support, 'text-sky-300'],
-    ['Low activity', data.readiness.lowActivity, 'text-amber-300'],
-    ['Dormant', data.readiness.dormant, 'text-red-300'],
+    ['Active', data.readiness.active, 'text-emerald-300', 'Highly Active + Active: measurable progression in 4 or more intervals'],
+    ['Low activity', data.readiness.lowActivity, 'text-amber-300', '1–3 active intervals in the window'],
+    ['Dormant', data.readiness.dormant, 'text-red-300', 'No measurable progression in the window'],
+    ['Lords', data.readiness.total, 'text-gray-200', 'All lords in this snapshot — Active + Low + Dormant equals this number'],
+  ];
+  const roles = [
+    ['Core Fighter', data.readiness.coreFighters],
+    ['Support', data.readiness.support],
+    ['Monitor', data.readiness.monitor],
   ];
   return (
     <div className="space-y-5">
       <div>
         <SectionHeading eyebrow="Kingdom readiness" title="Players and readiness" />
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {readiness.map(([label, value, color]) => <div key={label} className="rounded-md border border-gray-800 bg-discord-bg-darker px-4 py-3"><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">{label}</p><p className={`mt-1 text-2xl font-semibold ${color}`}>{value}</p></div>)}
+          {readiness.map(([label, value, color, definition]) => <div key={label} className="rounded-md border border-gray-800 bg-discord-bg-darker px-4 py-3" title={definition}><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">{label}</p><p className={`mt-1 text-2xl font-semibold ${color}`}>{value}</p></div>)}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-800 bg-gray-500/[0.03] px-3 py-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Roles from the same activity</p>
+          {roles.map(([role, count]) => <p key={role} className="text-xs text-gray-500" title={`Players whose activity band maps to the "${role}" role`}>{role}: <span className="font-mono text-gray-300">{count}</span></p>)}
+          <p className="text-[11px] text-gray-600" title={ACTIVITY_DEFINITION}>{ACTIVITY_DEFINITION}</p>
         </div>
       </div>
-      <PlayerTable players={data.players} />
+      <PlayerTable players={data.players} snapshotDate={data.snapshotDate} />
     </div>
   );
 }
@@ -417,6 +586,7 @@ function Row({ data }) {
   const [combatOnly, setCombatOnly] = useState(false);
   const [savedRosters, setSavedRosters] = useState([]);
   const [savedRostersLoading, setSavedRostersLoading] = useState(true);
+  const [savedRostersError, setSavedRostersError] = useState('');
   const [savedRoster, setSavedRoster] = useState(null);
   const [savingRoster, setSavingRoster] = useState(false);
   const [rosterSaveError, setRosterSaveError] = useState('');
@@ -702,15 +872,33 @@ function Row({ data }) {
     setSelected((current) => current.filter((id) => !visibleIds.has(id)));
   };
 
-  useEffect(() => {
+  /**
+   * Loads the shared saved rosters. Every outcome settles into one of three
+   * visible states - content, empty, or an error with a retry - because the
+   * old spinner only cleared when the promise settled, and a settings proxy
+   * that never answered left it spinning forever.
+   */
+  const loadSavedRosters = () => {
+    setSavedRostersLoading(true);
+    setSavedRostersError('');
     getSettings().then((result) => {
       const rosters = (Array.isArray(result.rowRosters) ? result.rowRosters : (result.rowRoster ? [result.rowRoster] : [])).filter((roster) => roster && Array.isArray(roster.teams));
       setSavedRosters(rosters);
       setSavedRoster((current) => current && rosters.some((roster) => roster.id === current.id) ? current : (rosters[0] || null));
-    }).catch(() => {
+    }).catch((error) => {
       setSavedRosters([]);
       setSavedRoster(null);
+      setSavedRostersError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to load saved rosters.',
+      );
     }).finally(() => setSavedRostersLoading(false));
+  };
+
+  useEffect(() => {
+    loadSavedRosters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveRoster(name = rosterName) {
@@ -814,7 +1002,7 @@ function Row({ data }) {
         <Card title="Saved roster">
           {rosterNotice ? <div className="mb-4 flex items-center justify-between gap-3 rounded border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2.5 text-sm text-emerald-300"><span>{rosterNotice}</span><button type="button" onClick={() => setRosterNotice('')} className="text-xs text-emerald-200/70 hover:text-emerald-200" aria-label="Dismiss notification">×</button></div> : null}
           {rosterSaveError ? <div className="mb-4 flex items-center justify-between gap-3 rounded border border-red-500/30 bg-red-500/[0.06] px-3 py-2.5 text-sm text-red-300"><span>{rosterSaveError}</span><button type="button" onClick={() => setRosterSaveError('')} className="text-xs text-red-200/70 hover:text-red-200" aria-label="Dismiss error">×</button></div> : null}
-          {savedRostersLoading ? <div className="flex min-h-56 items-center justify-center text-sm text-gray-500">Loading saved rosters…</div> : savedRoster && savedRosters.length ? <div><div className="mb-4 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Saved rosters</p><div className="mt-2 flex flex-wrap gap-2">{savedRosters.map((roster) => <button key={roster.id} type="button" onClick={() => { setSavedRoster(roster); setExpandedSavedTeam(null); }} className={`rounded border px-3 py-2 text-left transition ${savedRoster?.id === roster.id ? 'border-amber-400/60 bg-amber-400/[0.05] text-amber-300' : 'border-gray-800 text-gray-400 hover:border-gray-600'}`}><span className="block text-xs">{roster.name || 'Saved roster'}</span><span className="mt-1 block font-mono text-[9px] text-gray-600">{roster.teams?.length || 0} teams</span></button>)}</div></div><div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-500/[0.03] px-4 py-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Current roster</p><p className="mt-1 text-sm text-gray-200">{savedRoster.name || 'Saved roster'} · {savedRoster.teamCount || savedRoster.teams.length} teams · saved {savedRoster.savedAt ? new Date(savedRoster.savedAt).toLocaleString() : 'date unavailable'}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setExpandedSavedTeam(expandedSavedTeam ? null : savedRoster.teams[0]?.name)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-gray-200">View roster</button><button type="button" onClick={editSavedRoster} className="rounded border border-amber-400/60 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 hover:bg-amber-400/[0.06]">Edit roster</button><button type="button" onClick={() => setDeleteRosterModal(true)} className="rounded border border-red-500/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-300 hover:bg-red-500/[0.06]">Delete roster</button></div></div><div className="grid gap-3 md:grid-cols-2">{savedRoster.teams.map((team) => <div key={team.name} className="overflow-hidden rounded-md border border-gray-800 bg-gray-500/[0.03]"><button type="button" onClick={() => setExpandedSavedTeam((current) => current === team.name ? null : team.name)} className="w-full p-4 text-left transition hover:bg-gray-500/[0.04]"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Team {savedRoster.teams.indexOf(team) + 1}</p><h3 className="mt-1 text-base font-semibold text-gray-200">{team.name}</h3></div><span className="rounded-full border border-amber-400/30 px-2 py-1 font-mono text-[10px] text-amber-300">{(team.players || []).length + (team.titles || []).length} / 30 players</span></div><div className="mt-3 grid grid-cols-3 gap-2"><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-gray-300">{number(team.power)}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Score</p><p className="mt-1 font-mono text-sm text-amber-200">{team.score ?? '—'}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p><p className="mt-1 font-mono text-sm text-gray-300">{(team.reserves || []).length} / 15</p></div></div></button>{expandedSavedTeam === team.name ? <div className="border-t border-gray-800 px-4 pb-4 pt-3"><div className="grid gap-4 sm:grid-cols-3"><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-amber-300">Title holders</p><div className="mt-2 space-y-1">{(team.titles || []).map((item) => <p key={item.title} className="border-b border-gray-800 py-1 text-xs text-gray-300"><span className="text-amber-200">{item.title}:</span> {item.name}</p>)}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Players</p><div className="mt-2">{(team.players || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Reserves</p><div className="mt-2">{(team.reserves || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div></div></div> : null}</div>)}</div></div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><p className="text-sm text-gray-300">No saved RoW rosters</p><p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generate and save a roster to make it available here.</p><button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button></div>}
+          {savedRostersLoading ? <div className="flex min-h-56 flex-col items-center justify-center gap-2 text-sm text-gray-500"><span>Loading saved rosters…</span><span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-700">takes a few seconds</span></div> : savedRostersError ? <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center"><p className="max-w-md text-sm text-gray-300">Could not load saved rosters.</p><p className="max-w-md text-xs leading-relaxed text-gray-500">{savedRostersError}</p><button type="button" onClick={loadSavedRosters} className="rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Retry</button></div> : savedRoster && savedRosters.length ? <div><div className="mb-4 rounded-md border border-gray-800 bg-gray-500/[0.03] p-3"><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Saved rosters</p><div className="mt-2 flex flex-wrap gap-2">{savedRosters.map((roster) => <button key={roster.id} type="button" onClick={() => { setSavedRoster(roster); setExpandedSavedTeam(null); }} className={`rounded border px-3 py-2 text-left transition ${savedRoster?.id === roster.id ? 'border-amber-400/60 bg-amber-400/[0.05] text-amber-300' : 'border-gray-800 text-gray-400 hover:border-gray-600'}`}><span className="block text-xs">{roster.name || 'Saved roster'}</span><span className="mt-1 block font-mono text-[9px] text-gray-600">{roster.teams?.length || 0} teams</span></button>)}</div></div><div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-500/[0.03] px-4 py-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Current roster</p><p className="mt-1 text-sm text-gray-200">{savedRoster.name || 'Saved roster'} · {savedRoster.teamCount || savedRoster.teams.length} teams · saved {savedRoster.savedAt ? new Date(savedRoster.savedAt).toLocaleString() : 'date unavailable'}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setExpandedSavedTeam(expandedSavedTeam ? null : savedRoster.teams[0]?.name)} className="rounded border border-gray-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-gray-400 hover:border-gray-600 hover:text-gray-200">View roster</button><button type="button" onClick={editSavedRoster} className="rounded border border-amber-400/60 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-amber-300 hover:bg-amber-400/[0.06]">Edit roster</button><button type="button" onClick={() => setDeleteRosterModal(true)} className="rounded border border-red-500/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-300 hover:bg-red-500/[0.06]">Delete roster</button></div></div><div className="grid gap-3 md:grid-cols-2">{savedRoster.teams.map((team) => <div key={team.name} className="overflow-hidden rounded-md border border-gray-800 bg-gray-500/[0.03]"><button type="button" onClick={() => setExpandedSavedTeam((current) => current === team.name ? null : team.name)} className="w-full p-4 text-left transition hover:bg-gray-500/[0.04]"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-500">Team {savedRoster.teams.indexOf(team) + 1}</p><h3 className="mt-1 text-base font-semibold text-gray-200">{team.name}</h3></div><span className="rounded-full border border-amber-400/30 px-2 py-1 font-mono text-[10px] text-amber-300">{(team.players || []).length + (team.titles || []).length} / 30 players</span></div><div className="mt-3 grid grid-cols-3 gap-2"><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Power</p><p className="mt-1 font-mono text-sm text-gray-300">{number(team.power)}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Score</p><p className="mt-1 font-mono text-sm text-amber-200">{team.score ?? '—'}</p></div><div><p className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">Reserves</p><p className="mt-1 font-mono text-sm text-gray-300">{(team.reserves || []).length} / 15</p></div></div></button>{expandedSavedTeam === team.name ? <div className="border-t border-gray-800 px-4 pb-4 pt-3"><div className="grid gap-4 sm:grid-cols-3"><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-amber-300">Title holders</p><div className="mt-2 space-y-1">{(team.titles || []).map((item) => <p key={item.title} className="border-b border-gray-800 py-1 text-xs text-gray-300"><span className="text-amber-200">{item.title}:</span> {item.name}</p>)}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Players</p><div className="mt-2">{(team.players || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div><div><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-500">Reserves</p><div className="mt-2">{(team.reserves || []).map((player) => <p key={player.id} className="border-b border-gray-800 py-1 text-xs text-gray-400">{player.name}</p>) || <p className="text-xs text-gray-400">None assigned.</p>}</div></div></div></div> : null}</div>)}</div></div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><p className="text-sm text-gray-300">No saved rosters yet — generate your first roster.</p><p className="mt-2 max-w-md text-xs leading-relaxed text-gray-600">Generate and save a roster to make it available here for the whole leadership team.</p><button type="button" onClick={() => setRowTab('generate')} className="mt-4 rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400">Generate roster</button></div>}
         </Card>
       ) : (
       <>
@@ -893,8 +1081,158 @@ function Row({ data }) {
   );
 }
 
-export default function LeadershipClient({ data }) {
+/**
+ * Public parity, ported: every alliance in the snapshot with full power and
+ * member counts (ServerStats also carries the power-distribution brackets and
+ * the strongest-lord/alliance figures), then the list itself - each row opens
+ * the alliance's full detail page, including all members.
+ */
+function Alliances({ roster, date }) {
+  if (!roster) {
+    return (
+      <Card title="Alliances">
+        <div className="flex min-h-56 flex-col items-center justify-center gap-2 text-center">
+          <p className="text-sm text-gray-300">Alliance data is unavailable right now.</p>
+          <p className="max-w-md text-xs leading-relaxed text-gray-600">
+            The roster service did not answer. The other Leadership tabs still work — try again in a moment.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+  const alliances = roster.alliances || [];
+  const players = roster.players || [];
+  const linkDate = date || roster.snapshot?.date || null;
+  return (
+    <div className="space-y-5">
+      <SectionHeading
+        eyebrow="Server structure"
+        title={`Alliances (${alliances.length})`}
+        description="Every alliance in this snapshot with full power and member counts, plus how power is distributed across the server."
+      />
+      <Card title="Server statistics">
+        <ServerStats alliances={alliances} players={players} snapshot={roster.snapshot} />
+      </Card>
+      <Card title="Alliance list">
+        <div className="mt-3">
+          <RosterSection
+            items={alliances}
+            perPage={10}
+            itemType="alliance"
+            showHeader={false}
+            framed={false}
+            linkDate={linkDate}
+            emptyLabel="No alliances in this snapshot."
+          />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+export default function LeadershipClient({ data, roster = null }) {
+  const router = useRouter();
   const [tab, setTab] = useState('overview');
-  const content = { overview: <Overview data={data} />, players: <Players data={data} />, row: <Row data={data} /> }[tab];
-  return <div className="space-y-5"><div><div className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500">03 / Leadership</div><h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">Leadership</h1><p className="mt-2 text-sm text-gray-500">Server {data.server} · rolling 7 days: {data.periodStart} → {data.periodEnd}</p></div><nav className="-mx-4 flex items-end border-b border-gray-800 px-4 pt-2 sm:mx-0 sm:px-0" aria-label="Leadership sections">{TABS.map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`relative -mb-px shrink-0 border border-b-0 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${tab === key ? 'border-gray-800 bg-discord-bg-darker text-amber-300' : 'border-transparent text-gray-500 hover:text-amber-200'}`}>{label}</button>)}</nav>{content}</div>;
+  const [query, setQuery] = useState('');
+  const suggestions = useMemo(
+    () => (roster && query.trim() ? buildSuggestions(roster.alliances || [], roster.players || [], query) : []),
+    [query, roster],
+  );
+
+  // The same snapshot picker the public home page has: every stored date, the
+  // newest labelled "Latest", and an Archived badge once a past week is
+  // pinned. The choice rides in ?date= so it survives a refresh and a link.
+  const dates = data.availableDates || [];
+  const selectedDate = data.requestedDate || dates[0] || data.snapshotDate;
+  const pickDate = (value) => {
+    const iso = String(value);
+    setQuery('');
+    router.replace(iso === dates[0] ? '/leadership' : `/leadership?date=${encodeURIComponent(iso)}`);
+  };
+
+  const health = data.snapshotHealth;
+  const content = {
+    overview: <Overview data={data} />,
+    players: <Players data={data} />,
+    alliances: <Alliances roster={roster} date={data.requestedDate || null} />,
+    row: <Row data={data} />,
+  }[tab];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-gray-500">03 / Leadership</div>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">Leadership</h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {roster ? (
+              <div className="w-full sm:w-72">
+                <RosterSearch value={query} onChange={setQuery} suggestions={suggestions} />
+              </div>
+            ) : null}
+            {dates.length > 1 ? (
+              <label className="flex items-center gap-2 rounded-md border border-gray-800 bg-discord-bg-darker px-2 py-1.5">
+                <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshot</span>
+                <select
+                  value={selectedDate}
+                  onChange={(event) => pickDate(event.target.value)}
+                  className="bg-transparent font-mono text-[11px] text-gray-300 outline-none"
+                  aria-label="Snapshot date"
+                >
+                  {dates.map((iso, index) => (
+                    <option key={iso} value={iso}>{index === 0 ? `Latest · ${iso}` : iso}</option>
+                  ))}
+                </select>
+                {!data.isLatest ? (
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-amber-300">Archived</span>
+                ) : null}
+              </label>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-discord-bg-darker px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200"
+              title="Reload the latest snapshot"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Refresh
+            </button>
+            <a
+              href={GUIDES_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-discord-bg-darker px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200"
+            >
+              <BookOpen className="h-3 w-3" />
+              Guides
+            </a>
+            <a
+              href={DISCORD_INVITE}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-discord-bg-darker px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200"
+            >
+              <MessageCircle className="h-3 w-3" />
+              Discord
+            </a>
+            <LanguageButton />
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-gray-500">
+          Server {data.server} · rolling 7 days: {data.periodStart} → {data.periodEnd}
+          {health ? (
+            <span className="text-gray-600">
+              {' '}· last snapshot {health.lastSnapshot} · {health.count} of {health.total} usable
+              {health.gaps?.length ? ` · gaps: ${health.gaps.map((gap) => gap.date).join(', ')}` : ''}
+            </span>
+          ) : null}
+        </p>
+      </div>
+      <nav className="-mx-4 flex items-end border-b border-gray-800 px-4 pt-2 sm:mx-0 sm:px-0" aria-label="Leadership sections">{TABS.map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`relative -mb-px shrink-0 border border-b-0 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition ${tab === key ? 'border-gray-800 bg-discord-bg-darker text-amber-300' : 'border-transparent text-gray-500 hover:text-amber-200'}`}>{label}</button>)}</nav>
+      {content}
+      <Onboarding />
+    </div>
+  );
 }

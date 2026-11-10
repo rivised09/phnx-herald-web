@@ -96,25 +96,52 @@ function compactNumber(value) {
   return Math.round(value).toLocaleString();
 }
 
-export async function getLeadershipDashboard() {
+export async function getLeadershipDashboard({ endDate = null } = {}) {
   const number = Number(serverId());
   const server = await prisma.sourceServer.findUnique({ where: { serverNumber: number } });
   if (!server) return null;
 
-  const today = new Date();
-  const windowStart = new Date(Date.UTC(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate() - 7,
-  ));
+  const allDates = await prisma.rosterSnapshot.findMany({
+    where: { serverId: server.id, status: 'COMPLETE' },
+    orderBy: { snapshotDate: 'desc' },
+    select: { snapshotDate: true },
+  });
+  const availableDates = allDates.map((item) => item.snapshotDate.toISOString().slice(0, 10));
+  if (!availableDates.length) return null;
+
+  const wanted =
+    endDate && /^\d{4}-\d{2}-\d{2}$/.test(String(endDate)) && availableDates.includes(String(endDate))
+      ? String(endDate)
+      : null;
+  // Same window rule as the files backend: seven days back from the pinned
+  // date or the newest snapshot, as calendar days so missing days are gaps.
+  const end = wanted || availableDates[0];
+  const windowStartMs = new Date(`${end}T00:00:00.000Z`).getTime() - 7 * 86400000;
+  const windowDates = [];
+  {
+    let cursor = new Date(windowStartMs);
+    const last = new Date(`${end}T00:00:00.000Z`);
+    while (cursor <= last) {
+      windowDates.push(cursor.toISOString().slice(0, 10));
+      cursor = new Date(cursor.getTime() + 86400000);
+    }
+  }
+
   const snapshots = await prisma.rosterSnapshot.findMany({
-    where: { serverId: server.id, status: 'COMPLETE', snapshotDate: { gte: windowStart } },
+    where: {
+      serverId: server.id,
+      status: 'COMPLETE',
+      snapshotDate: { gte: new Date(`${windowDates[0]}T00:00:00.000Z`), lte: new Date(`${end}T00:00:00.000Z`) },
+    },
     orderBy: { snapshotDate: 'asc' },
     select: { id: true, snapshotDate: true, lordCount: true },
   });
   const latest = snapshots[snapshots.length - 1];
   if (!latest) return null;
   const baseline = snapshots[0];
+  const snapshotByDate = new Map(
+    snapshots.map((item) => [item.snapshotDate.toISOString().slice(0, 10), item]),
+  );
 
   const [currentRows, snapshotRows] = await Promise.all([
     prisma.lordSnapshot.findMany({
@@ -240,7 +267,14 @@ export async function getLeadershipDashboard() {
       id: row.lord.sourceId.toString(),
       name: row.name || row.lord.name,
       power: compactNumber(Number(row.power)),
+      powerFull: Number(row.power),
       powerValue: Number(row.power),
+      merits: {
+        infantry: metricAt(latestDetail, 'Infantry Merits'),
+        cavalry: metricAt(latestDetail, 'Cavalry Merits'),
+        mage: metricAt(latestDetail, 'Mage Merits'),
+        marksman: metricAt(latestDetail, 'Marksman Merits'),
+      },
       activity,
       status,
       powerChange,
@@ -269,21 +303,54 @@ export async function getLeadershipDashboard() {
   ).length;
   const lowActivity = players.filter((player) => player.activity === 'Low Activity').length;
   const highActivity = players.filter((player) => player.activity === 'Highly Active' || player.activity === 'Active').length;
+  const dormant = players.filter((player) => player.activity === 'Dormant').length;
+  const coreFighters = players.filter((player) => player.activity === 'Highly Active').length;
+  const support = players.filter((player) => player.status === 'Support').length;
+  const monitor = players.filter((player) => player.status === 'Monitor').length;
   const kingdomPower = currentRows.reduce((sum, row) => sum + Number(row.power), 0);
-  const previousPower = baselineRows.reduce((sum, row) => sum + Number(row.power), 0);
-  const sumChange = (key) => players.reduce((sum, player) => sum + (player.changes[key] || 0), 0);
+  // Baseline over the same cohort as the current total (see files.js).
+  const baselineByLord = new Map(baselineRows.map((row) => [row.lordId, row]));
+  let previousPower = 0;
+  let previousPowerKnown = false;
+  for (const row of currentRows) {
+    const entry = baselineByLord.get(row.lordId);
+    if (entry) {
+      previousPower += Number(entry.power);
+      previousPowerKnown = true;
+    }
+  }
+  const powerChangeValue =
+    previousPowerKnown && previousPower > 0
+      ? ((kingdomPower - previousPower) / previousPower) * 100
+      : null;
+  const sumChange = (key) => {
+    const values = players
+      .map((player) => player.changes[key])
+      .filter((value) => value !== null && value !== undefined);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  };
+  const powerChanges = players
+    .map((player) => player.powerChange)
+    .filter((value) => value !== null && value !== undefined);
   const recentChanges = {
-    power: players.reduce((sum, player) => sum + (player.powerChange || 0), 0),
+    power: powerChanges.length ? powerChanges.reduce((sum, value) => sum + value, 0) : null,
     kills: sumChange('kills'),
     deaths: sumChange('deaths'),
     healing: sumChange('healing'),
     merits: sumChange('merits'),
   };
-  const activityTimeline = snapshots.map((snapshot, index) => {
-    if (index === 0) {
-      return { date: snapshot.snapshotDate.toISOString().slice(0, 10), activePlayers: 0 };
+  const activityTimeline = windowDates.map((date, index) => {
+    const snapshot = snapshotByDate.get(date);
+    if (!snapshot) {
+      return { date, activePlayers: null, gap: true, reason: 'missing' };
     }
-    const previousSnapshot = snapshots[index - 1];
+    if (index === 0) {
+      return { date, activePlayers: null, gap: false, reason: 'first' };
+    }
+    const previousSnapshot = snapshotByDate.get(windowDates[index - 1]);
+    if (!previousSnapshot) {
+      return { date, activePlayers: null, gap: true, reason: 'after-gap' };
+    }
     let activePlayers = 0;
     currentRows.forEach((row) => {
       const history = metricsByLord.get(row.lordId) || new Map();
@@ -302,27 +369,44 @@ export async function getLeadershipDashboard() {
         activePlayers += 1;
       }
     });
-    return { date: snapshot.snapshotDate.toISOString().slice(0, 10), activePlayers };
+    return { date, activePlayers, gap: false, reason: null };
   });
 
+  const gapDates = windowDates.filter((day) => !snapshotByDate.has(day));
+  const snapshotDate = latest.snapshotDate.toISOString().slice(0, 10);
   return {
     server: number,
-    snapshotDate: latest.snapshotDate.toISOString().slice(0, 10),
-    periodStart: baseline.snapshotDate.toISOString().slice(0, 10),
-    periodEnd: latest.snapshotDate.toISOString().slice(0, 10),
+    snapshotDate,
+    periodStart: windowDates[0],
+    periodEnd: windowDates[windowDates.length - 1],
     snapshotCount: snapshots.length,
+    availableDates,
+    requestedDate: wanted,
+    isLatest: !wanted || wanted === availableDates[0],
+    snapshotHealth: {
+      lastSnapshot: snapshotDate,
+      lastCrawledAt: null,
+      count: snapshots.length,
+      total: windowDates.length,
+      gaps: gapDates.map((date) => ({ date, reason: 'missing' })),
+      playersWithoutFile: 0,
+    },
     kingdom: {
       power: compactNumber(kingdomPower),
-      powerChange:
-        previousPower > 0 ? `${(((kingdomPower - previousPower) / previousPower) * 100).toFixed(1)}%` : '—',
+      powerFull: kingdomPower,
+      powerChange: powerChangeValue === null ? '—' : `${powerChangeValue.toFixed(1)}%`,
+      powerChangeValue,
+      baselinePower: previousPowerKnown ? previousPower : null,
+      baselineDate: previousPowerKnown ? baseline.snapshotDate.toISOString().slice(0, 10) : null,
       lords: currentRows.length,
       lordChange: baseline.id === latest.id ? null : currentRows.length - baselineRows.length,
       activity: highActivity ? 'High' : 'Low',
     },
     activityCounts: {
-      active: players.filter((player) => player.activity === 'Active' || player.activity === 'Highly Active').length,
+      active: highActivity,
       low: lowActivity,
-      dormant: players.filter((player) => player.activity === 'Dormant').length,
+      dormant,
+      total: players.length,
     },
     recentChanges,
     activityTimeline,
@@ -338,10 +422,13 @@ export async function getLeadershipDashboard() {
       `${highActivity} players showed measurable combat or merit growth`,
     ],
     readiness: {
-      ready: players.filter((player) => player.activity === 'Highly Active' || player.activity === 'Active').length,
-      support: players.filter((player) => player.status === 'Support').length,
+      total: players.length,
+      active: highActivity,
       lowActivity,
-      dormant: players.filter((player) => player.activity === 'Dormant').length,
+      dormant,
+      coreFighters,
+      support,
+      monitor,
     },
     players: players.sort((a, b) => b.powerValue - a.powerValue),
   };

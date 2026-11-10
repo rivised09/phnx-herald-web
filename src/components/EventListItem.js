@@ -5,17 +5,19 @@ import { useEffect, useState } from 'react';
 import { CalendarDays, MapPin, Timer, ChevronRight } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import CountdownTimer from './CountdownTimer';
-import { formatLocalLong, formatUtc, formatDuration } from '../lib/time';
+import useNow from './useNow';
+import { formatLocalLong, formatUtc, formatDuration, eventPhase, displayStatus } from '../lib/time';
 
 export default function EventListItem({ event }) {
   const [mounted, setMounted] = useState(false);
+  const now = useNow();
+  const phase = eventPhase(event, now);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const duration = formatDuration(event.startTime, event.endTime);
-  const showCountdown = event.status === 'SCHEDULED';
 
   return (
     <Link
@@ -24,7 +26,7 @@ export default function EventListItem({ event }) {
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <StatusBadge status={event.status} />
+          <StatusBadge status={displayStatus(event, now)} />
           <span className="truncate text-sm font-medium text-neutral-100">▰ {event.title}</span>
         </div>
 
@@ -55,7 +57,14 @@ export default function EventListItem({ event }) {
       </div>
 
       <div className="flex shrink-0 flex-col items-end justify-between gap-1 py-0.5 text-right">
-        {showCountdown && <CountdownTimer startTime={event.startTime} />}
+        {phase === 'countdown' && <CountdownTimer startTime={event.startTime} />}
+        {phase === 'running' && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            In progress
+          </span>
+        )}
+        {phase === 'ended' && <span className="text-[11px] text-gray-500">Event ended</span>}
         {mounted && (
           <div className="hidden text-xs text-gray-500 sm:block">UTC: {formatUtc(event.startTime)}</div>
         )}
