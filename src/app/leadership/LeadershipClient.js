@@ -1086,20 +1086,32 @@ function Row({ data }) {
  * member counts (ServerStats also carries the power-distribution brackets and
  * the strongest-lord/alliance figures), then the list itself - each row opens
  * the alliance's full detail page, including all members.
+ *
+ * The roster arrives from the client-side background fetch: while it is in
+ * flight the tab shows a skeleton rather than a spinner over an empty page.
  */
-function Alliances({ roster, date }) {
-  if (!roster) {
+function Alliances({ roster, rosterState, onRetry, date }) {
+  if (rosterState === 'loading' && !roster) return <AlliancesSkeleton />;
+  if (rosterState === 'error') {
     return (
       <Card title="Alliances">
-        <div className="flex min-h-56 flex-col items-center justify-center gap-2 text-center">
-          <p className="text-sm text-gray-300">Alliance data is unavailable right now.</p>
+        <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
+          <p className="text-sm text-gray-300">Alliance data could not be loaded.</p>
           <p className="max-w-md text-xs leading-relaxed text-gray-600">
-            The roster service did not answer. The other Leadership tabs still work — try again in a moment.
+            The roster request failed. The other Leadership tabs still work — try again in a moment.
           </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded border border-gray-700 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-400"
+          >
+            Retry
+          </button>
         </div>
       </Card>
     );
   }
+  if (!roster) return <AlliancesSkeleton />;
   const alliances = roster.alliances || [];
   const players = roster.players || [];
   const linkDate = date || roster.snapshot?.date || null;
@@ -1130,10 +1142,67 @@ function Alliances({ roster, date }) {
   );
 }
 
-export default function LeadershipClient({ data, roster = null }) {
+/** Placeholder for the Alliances tab while its background fetch is in flight. */
+function AlliancesSkeleton() {
+  return (
+    <div className="space-y-5" role="status" aria-label="Loading alliances">
+      <span className="sr-only">Loading alliances…</span>
+      <div className="rounded-md border border-gray-800 bg-discord-bg-darker p-4">
+        <div className="h-3 w-44 animate-pulse rounded bg-gray-800" />
+        <div className="mt-4 h-16 w-full animate-pulse rounded bg-gray-800" />
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="h-14 animate-pulse rounded bg-gray-800" />
+          <div className="h-14 animate-pulse rounded bg-gray-800" />
+          <div className="h-14 animate-pulse rounded bg-gray-800" />
+        </div>
+      </div>
+      <div className="space-y-2 rounded-md border border-gray-800 bg-discord-bg-darker p-4">
+        <div className="h-3 w-36 animate-pulse rounded bg-gray-800" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-10 w-full animate-pulse rounded bg-gray-800" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function LeadershipClient({ data }) {
   const router = useRouter();
   const [tab, setTab] = useState('overview');
   const [query, setQuery] = useState('');
+
+  /**
+   * The home roster (Alliances tab + global search) loads in the background
+   * instead of being awaited by the server component - it used to delay first
+   * paint for content most visits never open. `avatars=0` keeps the response
+   * to the snapshot itself: the avatar backfill reads one full history file
+   * per lord (~86MB on this server) and nothing here renders avatars.
+   */
+  const [roster, setRoster] = useState(null);
+  const [rosterState, setRosterState] = useState('loading');
+  const loadRoster = () => {
+    setRosterState('loading');
+    const params = new URLSearchParams({ avatars: '0' });
+    if (data.requestedDate) params.set('date', data.requestedDate);
+    fetch(`/api/home/players?${params}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body?.status || body.status === 'unavailable') {
+          throw new Error(body?.detail || `(${res.status})`);
+        }
+        setRoster(body);
+        setRosterState('ready');
+      })
+      .catch(() => {
+        setRoster(null);
+        setRosterState('error');
+      });
+  };
+  useEffect(() => {
+    loadRoster();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.requestedDate]);
+
   const suggestions = useMemo(
     () => (roster && query.trim() ? buildSuggestions(roster.alliances || [], roster.players || [], query) : []),
     [query, roster],
@@ -1154,7 +1223,7 @@ export default function LeadershipClient({ data, roster = null }) {
   const content = {
     overview: <Overview data={data} />,
     players: <Players data={data} />,
-    alliances: <Alliances roster={roster} date={data.requestedDate || null} />,
+    alliances: <Alliances roster={roster} rosterState={rosterState} onRetry={loadRoster} date={data.requestedDate || null} />,
     row: <Row data={data} />,
   }[tab];
 
@@ -1167,11 +1236,14 @@ export default function LeadershipClient({ data, roster = null }) {
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-100">Leadership</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {roster ? (
-              <div className="w-full sm:w-72">
-                <RosterSearch value={query} onChange={setQuery} suggestions={suggestions} />
-              </div>
-            ) : null}
+            <div className="w-full sm:w-72">
+              <RosterSearch
+                value={query}
+                onChange={setQuery}
+                suggestions={suggestions}
+                loading={rosterState === 'loading'}
+              />
+            </div>
             {dates.length > 1 ? (
               <label className="flex items-center gap-2 rounded-md border border-gray-800 bg-discord-bg-darker px-2 py-1.5">
                 <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshot</span>

@@ -114,12 +114,6 @@ export function cancelScrape() {
   return request('/api/scrape', { method: 'DELETE' });
 }
 
-export function importDragonSession(state) {
-  return request('/api/scrape/session', {
-    method: 'POST',
-    body: JSON.stringify(state),
-  });
-}
 
 export function createEvent(payload) {
   return request('/api/events', {

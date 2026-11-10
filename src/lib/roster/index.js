@@ -55,6 +55,24 @@ const readHomeDated = unstable_cache(
   { revalidate: PINNED_TTL, tags: ['roster'] },
 );
 
+/**
+ * The same roster without the avatar backfill (one full player-history file
+ * per lord, ~86MB on a 304-lord server). Separate cache keys so a lean read
+ * for the leadership tab can never be served to the public home page, which
+ * renders the avatars.
+ */
+const readHomeLeanLatest = unstable_cache(
+  () => getStoredRoster({ avatars: false }),
+  ['roster:home:lean'],
+  { revalidate: LATEST_TTL, tags: ['roster'] },
+);
+
+const readHomeLeanDated = unstable_cache(
+  (iso) => getStoredRoster({ date: iso, avatars: false }),
+  ['roster:home:lean:dated'],
+  { revalidate: PINNED_TTL, tags: ['roster'] },
+);
+
 const readPlayerLatest = unstable_cache(
   (id) => getPlayerDetail(id),
   ['roster:player:latest'],
@@ -93,10 +111,14 @@ const readAllianceDated = unstable_cache(
  * swaps it in without having to know which date it got. Pinned reads cache
  * like a pinned detail page: for an hour, because the date can never change
  * underneath them; the newest keeps its minutes.
+ *
+ * `avatars: false` serves the lean variant (names, power, alliances - no
+ * avatar backfill) for callers that never render avatars.
  */
-export function readHomeRoster(date) {
+export function readHomeRoster(date, { avatars = true } = {}) {
   const iso = date && DATE_PARAM.test(String(date)) ? String(date) : null;
-  return iso ? readHomeDated(iso) : readHomeLatest();
+  if (avatars) return iso ? readHomeDated(iso) : readHomeLatest();
+  return iso ? readHomeLeanDated(iso) : readHomeLeanLatest();
 }
 
 export { getLeadershipDashboard };
