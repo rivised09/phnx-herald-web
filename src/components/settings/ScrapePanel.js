@@ -6,14 +6,12 @@ import {
   cancelScrape,
   getScrapeOptions,
   getScrapeState,
-  importDragonSession,
   startScrape,
 } from '../../lib/api';
 import { toastError, toastSuccess } from '../../lib/swal';
 
 const PHASES = {
   starting: 'starting',
-  login: 'waiting for sign-in',
   scraping: 'scraping',
   enriching: 'enriching',
   complete: 'complete',
@@ -41,9 +39,13 @@ const label = 'font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500';
  * Starts roster jobs on the bot and shows their output.
  *
  * The panel is deliberately a thin shell over the existing commands: the bot
- * spawns `scripts/scrape.js`, `scripts/enrich.js`,
- * `scripts/callofstats-scrape.js` or `scripts/dragon-login.js`, and this only
- * chooses the arguments, polls the job state, and renders the lines.
+ * spawns `scripts/scrape.js`, `scripts/enrich.js` or
+ * `scripts/callofstats-scrape.js`, and this only chooses the arguments, polls
+ * the job state, and renders the lines.
+ *
+ * DragonStats needs no login: the scrape mints its short-lived browser gate
+ * from a real window on the bot host (Arcjet refuses headless), so there is
+ * no sign-in step, session file or import here any more.
  */
 export default function ScrapePanel() {
   const [kind, setKind] = useState('dragon');
@@ -53,21 +55,18 @@ export default function ScrapePanel() {
   const [enrichDate, setEnrichDate] = useState('');
   const [scanIndex, setScanIndex] = useState('0');
   const [concurrency, setConcurrency] = useState('1');
-  const [relogin, setRelogin] = useState(true);
   const [enrichAfter, setEnrichAfter] = useState(false);
 
   const [options, setOptions] = useState(null);
   const [job, setJob] = useState(null);
   const [lines, setLines] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [error, setError] = useState(null);
   const [, setTick] = useState(0);
 
   const lastSeq = useRef(0);
   const jobId = useRef(null);
   const logRef = useRef(null);
-  const fileRef = useRef(null);
 
   const applyState = useCallback((res) => {
     const incoming = res?.job || null;
@@ -130,14 +129,13 @@ export default function ScrapePanel() {
 
   const running = Boolean(job?.running);
   const needsDate = kind === 'dragon' && mode === 'date' && !date;
-  const canStart = !running && !busy && !importing && !needsDate && (kind === 'login' || Boolean(server.trim()));
+  const canStart = !running && !busy && !needsDate && Boolean(server.trim());
 
   async function start() {
     setBusy(true);
     setError(null);
     try {
-      const payload = { kind, relogin };
-      if (kind !== 'login') payload.server = server.trim();
+      const payload = { kind, server: server.trim() };
       if (kind === 'dragon') {
         payload.mode = mode;
         if (mode === 'date') payload.date = date;
@@ -172,44 +170,15 @@ export default function ScrapePanel() {
     }
   }
 
-  async function importSessionFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setImporting(true);
-    setError(null);
-    try {
-      let state;
-      try {
-        state = JSON.parse(await file.text());
-      } catch {
-        throw new Error('That file is not valid JSON.');
-      }
-
-      const res = await importDragonSession(state);
-      const until = res?.session?.expiresAt
-        ? clock(new Date(res.session.expiresAt).getTime())
-        : null;
-      toastSuccess(`DragonStats session imported${until ? `, valid until ${until}` : ''}.`);
-      setOptions(await getScrapeOptions());
-    } catch (err) {
-      setError(err.message);
-      toastError(err.message);
-    } finally {
-      setImporting(false);
-    }
-  }
-
   const dragon = options?.dragon;
-  const sessionText = !options
-    ? 'checking session…'
-    : dragon?.valid
-      ? `session valid${dragon.expiresAt ? ` until ${clock(new Date(dragon.expiresAt).getTime())}` : ''}`
-      : dragon?.hasSession
-        ? 'session expired'
-        : 'no saved session';
-  const sessionTone = !options ? 'text-gray-500' : dragon?.valid ? 'text-emerald-400' : 'text-amber-300';
+  // The gate is the only DragonStats credential left: a ~1h token minted from
+  // a real window on the bot host. There is no session or login any more.
+  const gateText = !options
+    ? 'checking gate…'
+    : dragon?.gate?.valid
+      ? `gate valid${dragon.gate.expiresAt ? ` until ${clock(new Date(dragon.gate.expiresAt).getTime())}` : ''}`
+      : 'gate not minted yet (automatic on the next scrape)';
+  const gateTone = !options ? 'text-gray-500' : dragon?.gate?.valid ? 'text-emerald-400' : 'text-amber-300';
 
   return (
     <div className="rounded-lg border border-gray-800 bg-discord-surface">
@@ -220,8 +189,8 @@ export default function ScrapePanel() {
             <div className="text-sm font-medium text-neutral-100">Roster scraping</div>
             <p className="mt-0.5 max-w-xl text-[13px] text-gray-500">
               Runs the same commands as the terminal, on the bot host, and streams every line
-              here. If the DragonStats session is missing, import one below or run the login on a
-              desktop.
+              here. DragonStats needs no login — the scrape mints its browser gate from a real
+              window on the bot host automatically.
             </p>
           </div>
         </div>
@@ -262,22 +231,19 @@ export default function ScrapePanel() {
               <option value="dragon">DragonStats — scrape roster</option>
               <option value="enrich">CallofStats — enrich players</option>
               <option value="callofstats">CallofStats — full scrape</option>
-              <option value="login">DragonStats — sign in only</option>
             </select>
           </label>
 
-          {kind !== 'login' ? (
-            <label>
-              <span className={label}>Server</span>
-              <input
-                value={server}
-                onChange={(event) => setServer(event.target.value)}
-                disabled={running}
-                inputMode="numeric"
-                className={`${field} w-24`}
-              />
-            </label>
-          ) : null}
+          <label>
+            <span className={label}>Server</span>
+            <input
+              value={server}
+              onChange={(event) => setServer(event.target.value)}
+              disabled={running}
+              inputMode="numeric"
+              className={`${field} w-24`}
+            />
+          </label>
 
           {kind === 'enrich' || kind === 'callofstats' ? (
             <label>
@@ -379,16 +345,6 @@ export default function ScrapePanel() {
             <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] text-gray-400">
               <input
                 type="checkbox"
-                checked={relogin}
-                onChange={(event) => setRelogin(event.target.checked)}
-                disabled={running}
-                className="h-3.5 w-3.5 accent-gray-200"
-              />
-              Sign in automatically when the session is rejected
-            </label>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] text-gray-400">
-              <input
-                type="checkbox"
                 checked={enrichAfter}
                 onChange={(event) => setEnrichAfter(event.target.checked)}
                 disabled={running}
@@ -400,8 +356,8 @@ export default function ScrapePanel() {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-500">
-          <span className={sessionTone}>
-            DragonStats {sessionText}
+          <span className={gateTone}>
+            DragonStats {gateText}
           </span>
           <span>{options?.callofstats?.accounts ?? 0} CallofStats account(s)</span>
           {options?.latest ? (
@@ -411,34 +367,13 @@ export default function ScrapePanel() {
           ) : null}
           {needsDate ? <span className="text-amber-300">pick a date to continue</span> : null}
           {options?.dragon?.gate && !options.dragon.gate.valid ? (
-            <span className="text-amber-300">gate token expired</span>
+            <span className="text-amber-300">gate will be re-minted on the next scrape</span>
           ) : null}
           {options?.canOpenWindow === false ? (
-            <span className="text-amber-300">no display on the bot host — sign-in unavailable</span>
+            <span className="text-amber-300">no display on the bot host — gate minting unavailable (use Xvfb)</span>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={running || importing}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-700 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-gray-300 transition hover:border-gray-500 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {importing ? 'Importing…' : 'Import DragonStats session'}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={importSessionFile}
-            className="hidden"
-          />
-          <span className="text-[11px] text-gray-600">
-            Run <code className="text-gray-400">npm run dragon:login</code> on a desktop, then
-            import <code className="text-gray-400">data/dragonstats-session.json</code> here.
-          </span>
-        </div>
       </div>
 
       <div className="border-t border-gray-800 px-4 py-3">
@@ -499,9 +434,9 @@ export default function ScrapePanel() {
         </div>
 
         <p className="mt-2 text-[11px] text-gray-600">
-          Sign-in needs a desktop window. Capture a session with{' '}
-          <code className="text-gray-400">npm run dragon:login</code> and import it above, or run
-          the scrape on a desktop. Jobs write straight to R2, and only one job runs at a time so
+          The DragonStats scrape needs no login — it mints a short-lived browser gate from a real
+          window on the bot host (its bot detection refuses headless browsers, so a server needs
+          a display such as Xvfb). Jobs write straight to R2, and only one job runs at a time so
           the two sources never race.
         </p>
       </div>

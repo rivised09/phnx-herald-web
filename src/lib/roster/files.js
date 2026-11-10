@@ -136,7 +136,7 @@ function staleDays(iso) {
  * an absent or unknown date falls back to the newest, exactly like the database
  * read, so a link outliving a snapshot still renders.
  */
-export async function getStoredRoster({ date = null } = {}) {
+export async function getStoredRoster({ date = null, avatars = true } = {}) {
   let number;
   let url;
   try {
@@ -158,8 +158,11 @@ export async function getStoredRoster({ date = null } = {}) {
 
   // DragonStats writes avatar: null for every date, so a snapshot read from R2
   // loses the avatar that callofstats recorded on earlier dates. Look up the
-  // latest non-null avatar from each player's own history file.
-  const avatarById = await loadAvatars(body.players);
+  // latest non-null avatar from each player's own history file. `avatars: false`
+  // skips that pass entirely - it reads one full history file per player
+  // (~86MB for a 304-lord server), which callers that only need names, power
+  // and alliances (the leadership Alliances tab and search) never display.
+  const avatarById = avatars ? await loadAvatars(body.players) : new Map();
 
   const age = staleDays(body.snapshot.date);
   const alliances = alliancesWithUnaffiliated(body.alliances, body.players);
@@ -447,6 +450,156 @@ async function readFilesInParallel(urls, limit = 15) {
 }
 
 /**
+ * The aggregates of a window, computed from the per-player rows alone.
+ * Shared by the full read and the pre-aggregated summary path, so the two
+ * payloads the UI can receive can never drift apart.
+ */
+function summarize(players) {
+  const lowActivity = players.filter((player) => player.activity === 'Low Activity').length;
+  const highActivity = players.filter(
+    (player) => player.activity === 'Highly Active' || player.activity === 'Active',
+  ).length;
+  const dormant = players.filter((player) => player.activity === 'Dormant').length;
+  const coreFighters = players.filter((player) => player.activity === 'Highly Active').length;
+  const support = players.filter((player) => player.status === 'Support').length;
+  const monitor = players.filter((player) => player.status === 'Monitor').length;
+  const highPowerLowActivity = players.filter(
+    (player) => player.powerValue >= 25000000 && player.activity === 'Low Activity',
+  ).length;
+  const kingdomPower = players.reduce((sum, player) => sum + (player.powerValue || 0), 0);
+
+  /**
+   * A change is null when there is nothing to compare, never 0: showing 0 for
+   * "no data" is what made every leader's table read flat. Sums skip nulls and
+   * stay null when no player has data at all.
+   */
+  const sumChange = (key) => {
+    const values = players
+      .map((player) => player.changes?.[key])
+      .filter((value) => value !== null && value !== undefined);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  };
+  const powerChanges = players
+    .map((player) => player.powerChange)
+    .filter((value) => value !== null && value !== undefined);
+  const recentChanges = {
+    power: powerChanges.length ? powerChanges.reduce((sum, value) => sum + value, 0) : null,
+    kills: sumChange('kills'),
+    deaths: sumChange('deaths'),
+    healing: sumChange('healing'),
+    merits: sumChange('merits'),
+  };
+
+  const biggestKillGrowth = [...players]
+    .filter((player) => player.changes?.kills !== null && player.changes?.kills !== undefined)
+    .sort((a, b) => b.changes.kills - a.changes.kills)
+    .slice(0, 5);
+
+  return {
+    kingdomPower,
+    lowActivity,
+    highActivity,
+    dormant,
+    coreFighters,
+    support,
+    monitor,
+    highPowerLowActivity,
+    recentChanges,
+    biggestKillGrowth,
+  };
+}
+
+/**
+ * A window summary - either loaded from `leadership/<date>.json` (published
+ * by the bot next to the snapshots it summarises) or built in memory by the
+ * full read - into the payload `LeadershipClient` renders. This is the single
+ * place the final shape is decided, which is what keeps the fast path and
+ * the fallback identical.
+ */
+function assembleLeadership({ summary, index, wanted, number }) {
+  const players = summary.players
+    .map((player) => ({ ...player, power: compactNumber(player.powerFull ?? null) }))
+    .sort((a, b) => (b.powerValue || 0) - (a.powerValue || 0));
+  const stats = summarize(players);
+  const health = summary.health || {
+    lastSnapshot: summary.snapshotDate,
+    lastCrawledAt: null,
+    count: 0,
+    total: 0,
+    gaps: [],
+    playersWithoutFile: 0,
+  };
+  const baseline = summary.baseline || { known: false };
+  const powerChangeValue =
+    baseline.known && baseline.power > 0
+      ? ((stats.kingdomPower - baseline.power) / baseline.power) * 100
+      : null;
+
+  return {
+    server: number,
+    snapshotDate: summary.snapshotDate,
+    periodStart: summary.periodStart,
+    periodEnd: summary.periodEnd,
+    snapshotCount: health.count,
+    // The date picker lists every stored snapshot, exactly like the public
+    // home page's picker; `requestedDate` is the pinned end date (null = the
+    // newest window) and `isLatest` tells the UI whether to badge it.
+    availableDates: index.dates,
+    requestedDate: wanted,
+    isLatest: !wanted || wanted === index.dates[0],
+    snapshotHealth: health,
+    kingdom: {
+      power: compactNumber(stats.kingdomPower),
+      powerFull: stats.kingdomPower,
+      powerChange: powerChangeValue === null ? '—' : `${powerChangeValue.toFixed(1)}%`,
+      powerChangeValue,
+      baselinePower: baseline.known ? baseline.power : null,
+      baselineDate: baseline.known ? baseline.date : null,
+      lords: players.length,
+      lordChange:
+        baseline.playerCount === null || baseline.playerCount === undefined
+          ? null
+          : players.length - baseline.playerCount,
+      activity: stats.highActivity ? 'High' : 'Low',
+    },
+    activityCounts: {
+      active: stats.highActivity,
+      low: stats.lowActivity,
+      dormant: stats.dormant,
+      total: players.length,
+    },
+    recentChanges: stats.recentChanges,
+    activityTimeline: summary.timeline || [],
+    biggestKillGrowth: stats.biggestKillGrowth,
+    attention: [
+      stats.highPowerLowActivity
+        ? `${stats.highPowerLowActivity} high-power players have shown very low recent activity`
+        : 'No high-power inactivity threshold has been triggered',
+      `${stats.lowActivity} players have no measurable progression in the latest scan`,
+      health.count === 1
+        ? 'A second snapshot this week is required for change detection'
+        : `Changes are aggregated from ${health.count} of ${health.total} days this week`,
+      `${stats.highActivity} players showed measurable combat or merit growth`,
+    ],
+    /**
+     * Activity buckets are mutually exclusive and sum to the lord total;
+     * `support` / `coreFighters` / `monitor` are *roles* derived from the
+     * same activity and are reported separately so nothing is counted twice.
+     */
+    readiness: {
+      total: players.length,
+      active: stats.highActivity,
+      lowActivity: stats.lowActivity,
+      dormant: stats.dormant,
+      coreFighters: stats.coreFighters,
+      support: stats.support,
+      monitor: stats.monitor,
+    },
+    players,
+  };
+}
+
+/**
  * R2-native replacement for the Postgres `getLeadershipDashboard`.
  *
  * Reads snapshot files for the last 7 days and player files to build the
@@ -473,6 +626,23 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   // The window ends at the pinned date, or at the newest stored snapshot, and
   // spans seven days back from there - eight calendar days, seven intervals.
   const end = wanted || index.dates[0];
+
+  /**
+   * Fast path: the bot publishes a pre-aggregated summary of each window
+   * next to the snapshots it summarises (`leadership/<end>.json`). It holds
+   * exactly what the full read below assembles by downloading every player's
+   * history file - 304 lords x ~291KB, ~86MB, which was the entire reason
+   * this page took 8-12 seconds to render. The summary is one ~200KB file.
+   *
+   * A missing summary (dates scraped before this existed) is not an error:
+   * the full read below still produces the same payload, and `assemble` is
+   * shared by both paths so they can never drift apart.
+   */
+  const summary = await readJson(`leadership/${end}.json`).catch(() => null);
+  if (summary && summary.version === 1 && Array.isArray(summary.players)) {
+    return assembleLeadership({ summary, index, wanted, number });
+  }
+
   const windowStartIso = new Date(
     new Date(`${end}T00:00:00.000Z`).getTime() - 7 * 86400000,
   )
@@ -543,7 +713,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   // Read player files with concurrency limit
   const playerFileResults = await readFilesInParallel(
     [...allPlayerIds].map((id) => `players/${id}.json`),
-    15,
+    40,
   );
 
   const playerFiles = new Map();
@@ -662,13 +832,15 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
             ? 'Dormant'
             : 'Monitor';
 
-    const lastMetrics = lastMetric || {};
+    // The observation rows only carry the four change counters; the RoW/ToC
+    // metrics live in the full metric set of the same day, so read them from
+    // there (reading them off the observation made `row`/`toc` always null).
+    const lastMetrics = lastMetric ? (file.metrics?.[lastMetric.date] || lastMetric.values) : {};
     const rowMetrics = {
       score: lastMetrics['Highest RoW Score'] ?? null,
       wins: lastMetrics['RoW Wins'] ?? null,
       matches: lastMetrics['RoW Matches Played'] ?? null,
     };
-
     const tocMetrics = {
       wins: lastMetrics['ToC Wins'] ?? null,
       battles: lastMetrics['ToC Battles'] ?? null,
@@ -682,17 +854,16 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       powerFull: snapPlayer.power ?? null,
       powerValue: snapPlayer.power ?? 0,
       // Per-troop merits for the merit filter/sort (Infantry / Cavalry /
-      // Marksman / Mage), straight from that day's scan.
+      // Marksman / Mage), straight from that day's scan. This key name is
+      // also the home roster's shape - an earlier version of this object
+      // listed a `merits` metric after it, and the duplicate key silently
+      // overwrote the per-troop object with a number.
       merits: snapPlayer.merits || null,
       activity,
       status,
       powerChange,
       changes,
       activityDays: activeObservations,
-      kills: current.kills,
-      merits: current.merits,
-      healing: current.healing,
-      deaths: current.deaths,
       // One source of truth for the current alliance: the player's own entry
       // for the window's end date - the exact field the profile page reads -
       // with the snapshot as the fallback. List, header and detail can no
@@ -717,24 +888,11 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     });
   }
 
-  // Aggregations
-  const highPowerLowActivity = players.filter(
-    (player) => player.powerValue >= 25000000 && player.activity === 'Low Activity',
-  ).length;
-  const lowActivity = players.filter((player) => player.activity === 'Low Activity').length;
-  const highActivity = players.filter(
-    (player) => player.activity === 'Highly Active' || player.activity === 'Active',
-  ).length;
-  const dormant = players.filter((player) => player.activity === 'Dormant').length;
-  const coreFighters = players.filter((player) => player.activity === 'Highly Active').length;
-  const support = players.filter((player) => player.status === 'Support').length;
-  const monitor = players.filter((player) => player.status === 'Monitor').length;
-  const kingdomPower = players.reduce((sum, player) => sum + (player.powerValue || 0), 0);
-
   /**
    * Baseline power over the same cohort as the current total, so the % change
    * compares like with like (a lord who arrived mid-window is on neither side)
-   * and can be quoted with its value and date next to it.
+   * and can be quoted with its value and date next to it. The bot's summary
+   * builder computes the same numbers when it writes `leadership/<date>.json`.
    */
   let previousPower = 0;
   let previousPowerKnown = false;
@@ -747,32 +905,6 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       }
     }
   }
-  const powerChangeValue =
-    previousPowerKnown && previousPower > 0
-      ? ((kingdomPower - previousPower) / previousPower) * 100
-      : null;
-
-  /**
-   * A change is null when there is nothing to compare, never 0: showing 0 for
-   * "no data" is what made every leader's table read flat. Sums skip nulls and
-   * stay null when no player has data at all.
-   */
-  const sumChange = (key) => {
-    const values = players
-      .map((player) => player.changes[key])
-      .filter((value) => value !== null && value !== undefined);
-    return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
-  };
-  const powerChanges = players
-    .map((player) => player.powerChange)
-    .filter((value) => value !== null && value !== undefined);
-  const recentChanges = {
-    power: powerChanges.length ? powerChanges.reduce((sum, value) => sum + value, 0) : null,
-    kills: sumChange('kills'),
-    deaths: sumChange('deaths'),
-    healing: sumChange('healing'),
-    merits: sumChange('merits'),
-  };
 
   /**
    * Activity timeline: per date, players who progressed since the previous
@@ -822,19 +954,19 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
 
   const latestMeta = meta.find((entry) => entry.date === latestDate);
 
-  return {
-    server: number,
+  // The same shape the bot writes to `leadership/<date>.json`: only the
+  // per-window facts. `assembleLeadership` turns either source into the
+  // payload, which is what keeps the fast path and this fallback identical.
+  const windowSummary = {
+    version: 1,
+    endDate: end,
+    windowDates,
     snapshotDate: latestDate,
     periodStart: windowDates[0],
     periodEnd: windowDates[windowDates.length - 1],
-    snapshotCount: validDates.length,
-    // The date picker lists every stored snapshot, exactly like the public
-    // home page's picker; `requestedDate` is the pinned end date (null = the
-    // newest window) and `isLatest` tells the UI whether to badge it.
-    availableDates: index.dates,
-    requestedDate: wanted,
-    isLatest: !wanted || wanted === index.dates[0],
-    snapshotHealth: {
+    players,
+    timeline: activityTimeline,
+    health: {
       lastSnapshot: latestDate,
       lastCrawledAt: latestMeta?.crawledAt || null,
       count: validDates.length,
@@ -845,58 +977,15 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       // quietly showing a smaller kingdom.
       playersWithoutFile,
     },
-    kingdom: {
-      power: compactNumber(kingdomPower),
-      powerFull: kingdomPower,
-      powerChange:
-        powerChangeValue === null ? '—' : `${powerChangeValue.toFixed(1)}%`,
-      powerChangeValue,
-      baselinePower: previousPowerKnown ? previousPower : null,
-      baselineDate: previousPowerKnown ? baselineDate : null,
-      lords: players.length,
-      lordChange: baselineSnapPlayers
-        ? players.length - baselineSnapPlayers.size
-        : null,
-      activity: highActivity ? 'High' : 'Low',
+    baseline: {
+      known: previousPowerKnown,
+      power: previousPower,
+      date: previousPowerKnown ? baselineDate : null,
+      playerCount: baselineSnapPlayers ? baselineSnapPlayers.size : null,
     },
-    activityCounts: {
-      active: highActivity,
-      low: lowActivity,
-      dormant,
-      total: players.length,
-    },
-    recentChanges,
-    activityTimeline,
-    biggestKillGrowth: [...players]
-      .filter((player) => player.changes.kills !== null)
-      .sort((a, b) => b.changes.kills - a.changes.kills)
-      .slice(0, 5),
-    attention: [
-      highPowerLowActivity
-        ? `${highPowerLowActivity} high-power players have shown very low recent activity`
-        : 'No high-power inactivity threshold has been triggered',
-      `${lowActivity} players have no measurable progression in the latest scan`,
-      validDates.length === 1
-        ? 'A second snapshot this week is required for change detection'
-        : `Changes are aggregated from ${validDates.length} of ${windowDates.length} days this week`,
-      `${highActivity} players showed measurable combat or merit growth`,
-    ],
-    /**
-     * Activity buckets are mutually exclusive and sum to the lord total;
-     * `support` / `coreFighters` / `monitor` are *roles* derived from the
-     * same activity and are reported separately so nothing is counted twice.
-     */
-    readiness: {
-      total: players.length,
-      active: highActivity,
-      lowActivity,
-      dormant,
-      coreFighters,
-      support,
-      monitor,
-    },
-    players: players.sort((a, b) => b.powerValue - a.powerValue),
   };
+
+  return assembleLeadership({ summary: windowSummary, index, wanted, number });
 }
 
 /** An alliance at one date, or at its newest snapshot. */
