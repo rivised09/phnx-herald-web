@@ -292,7 +292,10 @@ export default function Home({
                 key: 'stats',
                 label: t('home.tabStats'),
                 shortLabel: t('home.tabStatsShort'),
-                count: total,
+                // The chip counts lords, not "lords + alliances": the old
+                // `total` printed an unexplained 317 (304 + 13) that read like
+                // a third population. The panel spells both numbers out.
+                count: players.length,
                 panel: (
                   <ServerStats
                     key="stats"

@@ -1,11 +1,11 @@
 import Link from 'next/link';
-import { ArrowLeft, Globe, MapPin, Timer, Volume2, Clapperboard, XCircle } from 'lucide-react';
+import { ArrowLeft, Globe, MapPin, Timer, Volume2, Clapperboard } from 'lucide-react';
 import StatusBadge from '../../../components/StatusBadge';
-import CountdownTimer from '../../../components/CountdownTimer';
+import EventPhaseLine from '../../../components/EventPhaseLine';
 import TimezoneInfo from '../../../components/TimezoneInfo';
 import EventActions from '../../../components/EventActions';
 import { getEvent } from '../../../lib/api';
-import { formatDuration, BRANDING_FOOTER } from '../../../lib/time';
+import { formatDuration, displayStatus, BRANDING_FOOTER } from '../../../lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,8 +35,6 @@ export default async function EventDetailPage({ params }) {
 
   if (!event) return null;
 
-  const isScheduled = event.status === 'SCHEDULED';
-  const isCancelled = event.status === 'CANCELLED';
   const duration = formatDuration(event.startTime, event.endTime);
 
   return (
@@ -47,11 +45,11 @@ export default async function EventDetailPage({ params }) {
       </Link>
 
       <div className="mt-3 rounded-lg border border-gray-800 bg-discord-surface p-5">
-        {isScheduled && (
-          <div className="mb-2.5 text-sm text-gray-500">
-            Starts in <CountdownTimer startTime={event.startTime} className="font-semibold text-neutral-100" />
-          </div>
-        )}
+        {/* Live countdown → in-progress → ended line; replaces the old
+            "Starts in … Event started" pairing. */}
+        <div className="mb-2.5 text-sm text-gray-500">
+          <EventPhaseLine event={event} />
+        </div>
 
         <div className="mb-2.5 flex items-start justify-between gap-3">
           <div>
@@ -59,11 +57,10 @@ export default async function EventDetailPage({ params }) {
               04 / Event
             </div>
             <h1 className="mt-1 text-xl font-semibold leading-tight tracking-tight text-neutral-100">
-              {isCancelled && <XCircle className="mr-1 inline h-4 w-4 text-red-400" />}
               ▰ {event.title}
             </h1>
           </div>
-          <StatusBadge status={event.status} />
+          <StatusBadge status={displayStatus(event)} />
         </div>
 
         {event.description && (

@@ -67,10 +67,11 @@ const readPlayerDated = unstable_cache(
   { revalidate: PINNED_TTL, tags: ['roster'] },
 );
 
-const readLeadership = unstable_cache(getLeadershipDashboard, ['roster:leadership'], {
-  revalidate: LATEST_TTL,
-  tags: ['roster'],
-});
+const readLeadership = unstable_cache(
+  (options) => getLeadershipDashboard(options),
+  ['roster:leadership'],
+  { revalidate: LATEST_TTL, tags: ['roster'] },
+);
 
 const readAllianceLatest = unstable_cache(
   (id) => getAllianceDetail(id),

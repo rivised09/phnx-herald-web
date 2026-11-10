@@ -294,7 +294,16 @@ export function carryForwardEntry(file, wanted) {
     }))
     .map((block) => ({
       ...block,
-      rows: block.rows.filter((row) => !HIDDEN_ROWS.has(row.label)),
+      rows: block.rows.filter(
+        (row) =>
+          !HIDDEN_ROWS.has(row.label) &&
+          // A cumulative counter reading 0 means "the source never populated
+          // this field" (both CallOfStats and DragonStats leave tiered kills
+          // empty), not "the player has none". Rendering it as 0 is what made
+          // every profile show T1-T5 Kills = 0; the row is dropped so the
+          // section either shows real numbers or does not appear at all.
+          !(NON_ZERO_LABELS.has(row.label) && number(row.value) === 0),
+      ),
     }))
     .filter((block) => block.rows.length);
   return entry;

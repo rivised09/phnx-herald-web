@@ -1,16 +1,40 @@
 import { getApiBaseUrl } from './apiBase';
 
+/**
+ * One request to the app's own API routes (or, server-side, straight to the
+ * bot).
+ *
+ * Every call gets a timeout. Without one a settings proxy that accepts the
+ * connection but never answers leaves the promise pending forever, which is
+ * exactly how the RoW "Loading saved rosters…" spinner got stuck: the spinner
+ * only clears when the promise settles, so a hung upstream meant an infinite
+ * spinner. A timeout turns that into a visible error a user can retry.
+ */
+const DEFAULT_TIMEOUT_MS = 15000;
+
 async function request(path, options = {}) {
   let url = path;
   if (typeof window === 'undefined') {
     url = `${getApiBaseUrl()}${path}`;
   }
 
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    ...options,
-  });
+  const { timeout = DEFAULT_TIMEOUT_MS, ...rest } = options;
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeout),
+      ...rest,
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw new Error(
+        `The server did not respond within ${Math.round(timeout / 1000)} seconds. Please try again.`,
+      );
+    }
+    throw error;
+  }
 
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

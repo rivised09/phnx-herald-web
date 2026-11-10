@@ -78,12 +78,39 @@ export const STATUS_COLORS = {
   SCHEDULED: 'border-gray-700 text-gray-300',
   ACTIVE: 'border-emerald-500/40 text-emerald-400',
   CANCELLED: 'border-red-500/40 text-red-400',
-  COMPLETED: 'border-gray-800 text-gray-500',
+  // Completed is emerald, matching the reminder embed's green check card.
+  COMPLETED: 'border-emerald-500/40 text-emerald-400',
 };
 
 export const STATUS_DOTS = {
   SCHEDULED: 'bg-gray-300',
   ACTIVE: 'bg-emerald-400',
   CANCELLED: 'bg-red-400',
-  COMPLETED: 'bg-gray-600',
+  COMPLETED: 'bg-emerald-400',
 };
+
+/**
+ * What an event is doing right now, derived from the clock instead of the
+ * stored status. The status only flips on the scheduler's next tick, so a
+ * card that trusted it kept saying "Scheduled" while the event was already
+ * running (and "Starts in … Event started" after it began).
+ *
+ *   terminal - cancelled or completed (the stored status is authoritative)
+ *   ended    - past its end time but not yet marked completed
+ *   running  - started, not finished
+ *   countdown- waiting to start
+ */
+export function eventPhase(event, now = Date.now()) {
+  const status = event?.status;
+  if (status === 'CANCELLED' || status === 'COMPLETED') return 'terminal';
+  const start = new Date(event.startTime).getTime();
+  const end = event.endTime ? new Date(event.endTime).getTime() : NaN;
+  if (Number.isFinite(end) && now >= end) return 'ended';
+  if (Number.isFinite(start) && now >= start) return 'running';
+  return 'countdown';
+}
+
+/** The status a badge should show: a started event reads Active on time. */
+export function displayStatus(event, now = Date.now()) {
+  return eventPhase(event, now) === 'running' ? 'ACTIVE' : event.status;
+}
