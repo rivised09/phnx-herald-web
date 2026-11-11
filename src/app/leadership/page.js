@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { readLeadership } from '../../lib/roster';
 import LeadershipClient from './LeadershipClient';
+import LeadershipUnavailable from './LeadershipUnavailable';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,13 +20,22 @@ const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
  *    client in the background instead of being awaited here - it used to
  *    double the cold-start cost and delay first paint for content most
  *    visitors never open.
+ *
+ * A read that fails right now is a retryable state, not a 404: only a
+ * genuinely empty bucket (no snapshots at all) is allowed to notFound().
  */
 export default async function LeadershipPage({ searchParams }) {
   const params = await searchParams;
   const date =
     params?.date && DATE_PARAM.test(String(params.date)) ? String(params.date) : null;
 
-  const data = await readLeadership({ endDate: date });
+  let data = null;
+  try {
+    data = await readLeadership({ endDate: date });
+  } catch (error) {
+    console.error('[leadership] dashboard read failed:', error);
+    return <LeadershipUnavailable detail={error.message} />;
+  }
   if (!data) notFound();
 
   return <LeadershipClient data={data} />;

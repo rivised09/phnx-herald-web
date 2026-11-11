@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, BookOpen, Download, Info, MessageCircle, RefreshCw, Search } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { deleteSavedRowRoster, getSettings, updateSettings } from '../../lib/api';
 import MeritFilter, { MERIT_TYPES } from '../../components/home/MeritFilter';
 import RosterSearch from '../../components/home/RosterSearch';
@@ -421,15 +421,19 @@ function Overview({ data }) {
                 labelStyle={{ color: '#d1d5db' }}
                 itemStyle={{ color: '#fbbf24' }}
               />
-              <Line type="monotone" dataKey="activePlayers" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }} activeDot={{ r: 5, fill: '#fbbf24' }}>
-                <LabelList
-                  dataKey="activePlayers"
-                  content={({ x, y, value }) =>
-                    value === null || value === undefined || x === undefined ? null : (
-                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
-                    )}
-                />
-              </Line>
+              <Line
+                type="monotone"
+                dataKey="activePlayers"
+                stroke="#fbbf24"
+                strokeWidth={2}
+                dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#fbbf24' }}
+                label={({ x, y, value }) =>
+                  value === null || value === undefined || x === undefined ? null : (
+                    <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
+                  )
+                }
+              />
             </LineChart>
           </ResponsiveContainer>
         </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">At least two snapshots are required to show the activity trend.</p>}
@@ -468,9 +472,20 @@ function Overview({ data }) {
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={82} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} formatter={(value) => [full(value), 'Kill change']} contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }} labelStyle={{ color: '#d1d5db' }} />
-                  <Bar dataKey="kills" fill="url(#killGrowthGradient)" radius={[0, 4, 4, 0]} barSize={20} animationDuration={900}>
-                    <LabelList dataKey="kills" position="right" formatter={(value) => full(value)} style={{ fill: '#d1d5db', fontSize: 10, fontFamily: 'monospace' }} />
-                  </Bar>
+                  <Bar
+                    dataKey="kills"
+                    fill="url(#killGrowthGradient)"
+                    radius={[0, 4, 4, 0]}
+                    barSize={20}
+                    animationDuration={900}
+                    label={{
+                      position: 'right',
+                      fill: '#d1d5db',
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      formatter: (value) => full(value),
+                    }}
+                  />
                 </BarChart>
               </ResponsiveContainer> : <p className="py-8 text-sm text-gray-600">No kill growth recorded in this window.</p>}
             </div>

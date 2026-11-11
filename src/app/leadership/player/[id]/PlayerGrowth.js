@@ -48,21 +48,31 @@ function dailyGains(timeline, key) {
   for (let i = 1; i < timeline.length; i += 1) {
     const previous = timeline[i - 1][key];
     const current = timeline[i][key];
+    const dayGap =
+      (new Date(`${timeline[i].date}T00:00:00Z`) - new Date(`${timeline[i - 1].date}T00:00:00Z`)) /
+      86400000;
     rows.push({
       date: timeline[i].date,
-      gain: previous != null && current != null && current >= previous ? current - previous : null,
+      // Gains across a long hole (the early history is monthly) are not
+      // "daily" gains: plotting them drowns every real day's bar under one
+      // month-sized spike. They become gaps instead.
+      gain: previous != null && current != null && current >= previous && dayGap <= 3 ? current - previous : null,
     });
   }
   return rows;
 }
 
-function ChartFrame({ title, description, height = 200, children }) {
+function ChartFrame({ title, description, height = 200, plain = false, children }) {
   return (
     <Card title={title} description={description}>
       <div className="mt-3" style={{ height }}>
-        <ResponsiveContainer width="100%" height="100%">
-          {children}
-        </ResponsiveContainer>
+        {plain ? (
+          children
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            {children}
+          </ResponsiveContainer>
+        )}
       </div>
     </Card>
   );
@@ -94,16 +104,41 @@ export default function PlayerGrowth({ profile }) {
     rank: row.rank,
   }));
 
+  // Real rank ticks: without an explicit domain a constant rank (a #1 lord)
+  // renders an axis of 0..1 quarters, which reads as nonsense.
+  const ranks = timeline.map((row) => row.rank).filter((value) => value != null);
+  const rankMin = ranks.length ? Math.min(...ranks) : 1;
+  const rankMax = ranks.length ? Math.max(...ranks) : 10;
+  const rankDomain = rankMin === rankMax ? [rankMin - 1, rankMax + 1] : [rankMin, rankMax];
+
   const counters = ['kills', 'deaths', 'healed', 'merits'];
   const killGains = dailyGains(timeline, 'kills');
 
-  const gatheredRows = gathered.map((row) => ({
-    date: row.date,
-    gold: row.gold ?? null,
-    wood: row.wood ?? null,
-    ore: row.ore ?? null,
-    mana: row.mana ?? null,
-  }));
+  const storedDates = [...(profile.snapshotDates || [])].sort();
+  const previousStoredDate = (date) => {
+    let previous = null;
+    for (const candidate of storedDates) {
+      if (candidate < date) previous = candidate;
+      else break;
+    }
+    return previous;
+  };
+  const gatheredRows = gathered.map((row) => {
+    const previous = previousStoredDate(row.date);
+    const gapDays = previous
+      ? (new Date(`${row.date}T00:00:00Z`) - new Date(`${previous}T00:00:00Z`)) / 86400000
+      : null;
+    // Same rule as the kill-gain bars: a reading taken weeks after the one
+    // before it carries a month of gathering, not a day's - plot it as a gap.
+    const stale = gapDays === null || gapDays > 3;
+    return {
+      date: row.date,
+      gold: stale ? null : row.gold ?? null,
+      wood: stale ? null : row.wood ?? null,
+      ore: stale ? null : row.ore ?? null,
+      mana: stale ? null : row.mana ?? null,
+    };
+  });
   const hasGathered = gatheredRows.some(
     (row) => row.gold != null || row.wood != null || row.ore != null || row.mana != null,
   );
@@ -122,7 +157,18 @@ export default function PlayerGrowth({ profile }) {
           <XAxis dataKey="date" tick={TICK} tickFormatter={dateTick} axisLine={false} tickLine={false} minTickGap={30} />
           <YAxis yAxisId="power" tick={TICK} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => compact(v)} />
           {/* Rank #1 belongs at the top, so this axis runs the other way. */}
-          <YAxis yAxisId="rank" orientation="right" reversed tick={TICK} axisLine={false} tickLine={false} width={40} />
+          <YAxis
+            yAxisId="rank"
+            orientation="right"
+            reversed
+            domain={rankDomain}
+            allowDecimals={false}
+            tickFormatter={(value) => `#${value}`}
+            tick={TICK}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+          />
           <Tooltip
             formatter={(value, name) =>
               name === 'power' ? [Number(value).toLocaleString('en-US'), 'Power'] : [`#${value}`, 'Rank']
@@ -159,8 +205,10 @@ export default function PlayerGrowth({ profile }) {
         <ChartFrame
           title="Activity coverage"
           description="Snapshots where each counter moved - gaps are days with no detail data, not zeroes."
+          height={210}
+          plain
         >
-          <div className="flex h-full flex-col justify-center gap-2 px-1">
+          <div className="flex h-full flex-col justify-center gap-3 px-1">
             {counters.map((key) => {
               const values = timeline.map((row) => row[key]).filter((v) => v != null);
               const moved = timeline.filter((row, i) => {
