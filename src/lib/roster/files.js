@@ -333,6 +333,19 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     ...new Set([...(file.previousServers || []), ...(file.otherServers || []), ...splitServers]),
   ];
 
+  // Every album the player has ever published, newest first and deduplicated
+  // by image - the public page shows one date's set (max 8), the leadership
+  // view shows the whole gallery history with each image's date and likes.
+  const allAlbums = [];
+  const seenAlbums = new Set();
+  for (const date of [...(file.dates || [])].sort().reverse()) {
+    for (const album of file.byDate?.[date]?.albums || []) {
+      if (!album?.url || seenAlbums.has(album.url)) continue;
+      seenAlbums.add(album.url);
+      allAlbums.push({ ...album, date });
+    }
+  }
+
   return {
     id: file.id,
     name: entry.name,
@@ -358,6 +371,7 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
     previousServers: allPreviousServers,
     otherServers: file.otherServers || [],
     albums: albumsForDate(file, wanted),
+    allAlbums,
     sections,
     sectionsDate: sections.length ? wanted : null,
     insights: buildInsights({
