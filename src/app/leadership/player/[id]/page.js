@@ -14,8 +14,12 @@ const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
  * dashboard to the same snapshot window, so the two can never disagree
  * about which day they describe.
  *
- * A read that fails right now shows the retryable unavailable state rather
- * than a 404/500 - only a genuinely unknown player id is allowed to notFound.
+ * A lord who has left the current roster must not 404 on their own page:
+ * when the requested window's snapshot no longer contains them, the page
+ * falls back to the most recent window that does (their own last captured
+ * snapshot) and tells the visitor the data is historical. A read that fails
+ * right now shows the retryable unavailable state rather than a 404/500 -
+ * only a genuinely unknown player id is allowed to notFound.
  */
 export default async function LeadershipPlayerPage({ params, searchParams }) {
   const { id } = await params;
@@ -33,9 +37,28 @@ export default async function LeadershipPlayerPage({ params, searchParams }) {
     console.error('[leadership/player] read failed:', error);
     return <LeadershipUnavailable detail={error.message} />;
   }
+  if (!profile) notFound();
 
-  const player = dashboard?.players?.find((item) => item.id === String(id));
-  if (!profile || !dashboard || !player) notFound();
+  let player = dashboard?.players?.find((item) => item.id === String(id)) || null;
+
+  // The window's snapshot may predate or postdate this lord's time on the
+  // server (they left the roster, or the link pins an old date). Fall back to
+  // the newest window that still contains them: the last date they were
+  // captured, from their own history file.
+  if (!player) {
+    const lastSeen = [...(profile.snapshotDates || [])].sort().pop();
+    if (lastSeen && lastSeen !== date) {
+      try {
+        dashboard = await readLeadership({ endDate: lastSeen });
+      } catch (error) {
+        console.error('[leadership/player] historical window read failed:', error);
+        return <LeadershipUnavailable detail={error.message} />;
+      }
+      player = dashboard?.players?.find((item) => item.id === String(id)) || null;
+    }
+  }
+
+  if (!dashboard || !player) notFound();
 
   return (
     <LeadershipPlayerView

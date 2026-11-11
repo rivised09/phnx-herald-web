@@ -57,7 +57,9 @@ const ACTIVITY_DEFINITION =
 
 function Card({ title, children }) {
   return (
-    <section className="rounded-md border border-gray-800 bg-discord-bg-darker p-4">
+    // min-w-0: grid/flex items default to min-width:auto, which lets a wide
+    // table inside push the card past the viewport instead of scrolling it.
+    <section className="min-w-0 rounded-md border border-gray-800 bg-discord-bg-darker p-4">
       <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gray-500">{title}</p>
       {children}
     </section>
@@ -76,7 +78,17 @@ function SectionHeading({ eyebrow, title, description }) {
   );
 }
 
-function PlayerTable({ players, snapshotDate }) {
+/**
+ * Player detail link that keeps the pinned snapshot window: without the date
+ * a player who has since left the roster resolves against the *latest*
+ * window and 404s on their own detail page.
+ */
+function playerHref(playerId, date) {
+  const base = `/leadership/player/${encodeURIComponent(playerId)}`;
+  return date ? `${base}?date=${encodeURIComponent(date)}` : base;
+}
+
+function PlayerTable({ players, snapshotDate, date }) {
   const router = useRouter();
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
@@ -243,16 +255,16 @@ function PlayerTable({ players, snapshotDate }) {
                 key={player.id}
                 tabIndex={0}
                 role="link"
-                onClick={() => router.push(`/leadership/player/${encodeURIComponent(player.id)}`)}
+                onClick={() => router.push(playerHref(player.id, date))}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    router.push(`/leadership/player/${encodeURIComponent(player.id)}`);
+                    router.push(playerHref(player.id, date));
                   }
                 }}
                 className="cursor-pointer text-xs hover:bg-gray-500/[0.03] focus:bg-gray-500/[0.06] focus:outline-none"
               >
-                <td className="px-3 py-3"><Link href={`/leadership/player/${encodeURIComponent(player.id)}`} className="text-neutral-100 transition hover:text-amber-300">{player.name}</Link><p className="font-mono text-[10px] text-gray-600">#{player.id}</p></td>
+                <td className="px-3 py-3"><Link href={playerHref(player.id, date)} className="text-neutral-100 transition hover:text-amber-300">{player.name}</Link><p className="font-mono text-[10px] text-gray-600">#{player.id}</p></td>
                 <td className="px-3 py-3 font-mono text-amber-200" title={player.powerFull != null ? `${full(player.powerFull)} power` : undefined}>{player.powerFull != null ? full(player.powerFull) : player.power}</td>
                 <td className="px-3 py-3 text-gray-300" title={ACTIVITY_DEFINITION}><p>{player.activity}</p><p className="font-mono text-[10px] text-gray-600">{player.activityDays} active interval{player.activityDays === 1 ? '' : 's'}</p></td>
                 <td className="px-3 py-3 font-mono text-emerald-300" title={player.changes.kills === null ? 'No change data for this window' : undefined}>{full(player.changes.kills, { signed: true })}</td>
@@ -296,6 +308,276 @@ function PlayerTable({ players, snapshotDate }) {
         </div>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * Leadership decision support: everything a leader would otherwise compute by
+ * hand from the Players tab. All of it is derived client-side from the same
+ * dashboard payload - no server changes, so the fast path and full read stay
+ * byte-identical. Each block ends in a concrete "so do this" reading.
+ */
+function DecisionReports({ data, date }) {
+  const players = data.players || [];
+  const num = (value) => (value === null || value === undefined ? null : Number(value));
+  const pct = (value) => (value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`);
+
+  /* --- Alliance power balance ------------------------------------------ */
+  // Lords per alliance and their share of kingdom power: an alliance that
+  // holds half the roster but a third of the power is a recruitment or
+  // coaching problem.
+  const allianceRows = useMemo(() => {
+    const byAlliance = new Map();
+    for (const player of players) {
+      const name = player.alliance || 'No alliance';
+      const row = byAlliance.get(name) || { name, lords: 0, power: 0, kills: 0 };
+      row.lords += 1;
+      row.power += player.powerValue || 0;
+      row.kills += Math.max(0, player.changes?.kills || 0);
+      byAlliance.set(name, row);
+    }
+    const rows = [...byAlliance.values()].sort((a, b) => b.power - a.power);
+    const totalPower = rows.reduce((sum, row) => sum + row.power, 0) || 1;
+    return rows.map((row) => ({ ...row, powerShare: (row.power / totalPower) * 100 }));
+  }, [players]);
+
+  /* --- High power, low activity ---------------------------------------- */
+  // The retention list: lords carrying real power who are fading. Sorted by
+  // power so the biggest names surface first.
+  const atRisk = useMemo(() => {
+    const powers = players.map((player) => player.powerValue || 0).sort((a, b) => b - a);
+    const cut = powers[Math.floor(powers.length / 4)] || 0;
+    return players
+      .filter((player) => (player.powerValue || 0) >= cut && (player.activityDays || 0) <= 1)
+      .sort((a, b) => (b.powerValue || 0) - (a.powerValue || 0))
+      .slice(0, 8);
+  }, [players]);
+
+  /* --- Power movement --------------------------------------------------- */
+  const risers = useMemo(
+    () =>
+      players
+        .filter((player) => num(player.powerChange) > 0)
+        .sort((a, b) => num(b.powerChange) - num(a.powerChange))
+        .slice(0, 5),
+    [players],
+  );
+  const fallers = useMemo(
+    () =>
+      players
+        .filter((player) => num(player.powerChange) < 0)
+        .sort((a, b) => num(a.powerChange) - num(b.powerChange))
+        .slice(0, 5),
+    [players],
+  );
+
+  /* --- War performance --------------------------------------------------- */
+  // RoW and ToC are the two places the kingdom actually fights; win rates
+  // matter more than raw counts, but only once there are battles behind them.
+  const rowLeaders = useMemo(
+    () =>
+      players
+        .filter((player) => (player.row?.score || 0) > 0)
+        .sort((a, b) => (b.row?.score || 0) - (a.row?.score || 0))
+        .slice(0, 5),
+    [players],
+  );
+  const tocLeaders = useMemo(
+    () =>
+      players
+        .filter((player) => (player.toc?.battles || 0) >= 10)
+        .sort((a, b) => {
+          const aRate = parseFloat(String(a.toc?.winRate || '0')) || 0;
+          const bRate = parseFloat(String(b.toc?.winRate || '0')) || 0;
+          return bRate - aRate || (b.toc?.battles || 0) - (a.toc?.battles || 0);
+        })
+        .slice(0, 5),
+    [players],
+  );
+
+  /* --- Combat contribution ---------------------------------------------- */
+  const topKillers = useMemo(
+    () =>
+      players
+        .filter((player) => (player.changes?.kills || 0) > 0)
+        .sort((a, b) => (b.changes?.kills || 0) - (a.changes?.kills || 0))
+        .slice(0, 5),
+    [players],
+  );
+  const topHealers = useMemo(
+    () =>
+      players
+        .filter((player) => (player.changes?.healing || 0) > 0)
+        .sort((a, b) => (b.changes?.healing || 0) - (a.changes?.healing || 0))
+        .slice(0, 5),
+    [players],
+  );
+  const topMerits = useMemo(
+    () =>
+      players
+        .filter((player) => (player.changes?.merits || 0) > 0)
+        .sort((a, b) => (b.changes?.merits || 0) - (a.changes?.merits || 0))
+        .slice(0, 5),
+    [players],
+  );
+
+  const PlayerLine = ({ player, detail }) => (
+    <Link
+      href={playerHref(player.id, date)}
+      className="flex items-baseline justify-between gap-2 px-3 py-2 transition hover:bg-gray-500/[0.05]"
+    >
+      <span className="min-w-0 truncate text-xs text-gray-300">{player.name}</span>
+      <span className="shrink-0 font-mono text-[11px] text-gray-400">{detail}</span>
+    </Link>
+  );
+
+  return (
+    <div className="space-y-5">
+      <SectionHeading
+        eyebrow="Decision support"
+        title="What needs a decision this window"
+        description="Ranked lists computed from the same window as everything above - alliance balance, fading lords, movers, war form and contribution."
+      />
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Alliance power balance">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">
+            Share of kingdom power against share of lords. A row where the lord share is far above the power share is
+            the alliance to reinforce.
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[460px] text-left">
+              <thead className="border-b border-gray-800 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 font-normal">Alliance</th>
+                  <th className="px-3 py-2 text-right font-normal">Lords</th>
+                  <th className="px-3 py-2 text-right font-normal">Power</th>
+                  <th className="px-3 py-2 font-normal">Power share</th>
+                  <th className="px-3 py-2 text-right font-normal">Kill Δ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800/80">
+                {allianceRows.map((row) => (
+                  <tr key={row.name}>
+                    <td className="max-w-[180px] truncate px-3 py-2 text-xs text-gray-300" title={row.name}>
+                      {row.name}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-gray-400">{row.lords}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-amber-200">{full(row.power)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-800">
+                          <div className="h-full rounded-full bg-amber-400/80" style={{ width: `${Math.min(100, row.powerShare)}%` }} />
+                        </div>
+                        <span className="font-mono text-[10px] text-gray-500">{pct(row.powerShare)}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-emerald-300">{full(row.kills, { signed: true })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!allianceRows.length ? <p className="py-6 text-center text-sm text-gray-600">No alliance data in this window.</p> : null}
+        </Card>
+
+        <Card title="High power, low activity">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">
+            Top-quartile lords by power who moved in at most one interval this window. The names to reach out to before
+            a war needs them.
+          </p>
+          <div className="mt-3 divide-y divide-gray-800/80">
+            {atRisk.map((player) => (
+              <PlayerLine
+                key={player.id}
+                player={player}
+                detail={`${full(player.powerFull)} · ${player.activityDays} int`}
+              />
+            ))}
+            {!atRisk.length ? (
+              <p className="py-6 text-center text-sm text-gray-600">Every top-quartile lord showed up this window.</p>
+            ) : null}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Card title="Power movers">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">Who is compounding and who is bleeding power against the window start.</p>
+          <div className="mt-3">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-emerald-400/80">Rising</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {risers.map((player) => (
+                <PlayerLine key={player.id} player={player} detail={full(player.powerChange, { signed: true })} />
+              ))}
+              {!risers.length ? <p className="py-3 text-xs text-gray-600">No measured power gains in this window.</p> : null}
+            </div>
+            <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.16em] text-red-400/80">Falling</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {fallers.map((player) => (
+                <PlayerLine key={player.id} player={player} detail={full(player.powerChange, { signed: true })} />
+              ))}
+              {!fallers.length ? <p className="py-3 text-xs text-gray-600">Nobody lost power this window.</p> : null}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="War form">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">The strongest Roots of War scores and Tournament of Champions win rates (10+ battles) in the roster.</p>
+          <div className="mt-3">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">RoW score</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {rowLeaders.map((player) => (
+                <PlayerLine
+                  key={player.id}
+                  player={player}
+                  detail={`${Number(player.row.score).toLocaleString('en-US')} · ${player.row.wins}/${player.row.matches}`}
+                />
+              ))}
+              {!rowLeaders.length ? <p className="py-3 text-xs text-gray-600">No RoW games recorded this window.</p> : null}
+            </div>
+            <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.16em] text-gray-600">ToC win rate</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {tocLeaders.map((player) => (
+                <PlayerLine
+                  key={player.id}
+                  player={player}
+                  detail={`${player.toc.winRate} · ${player.toc.wins}/${player.toc.battles}`}
+                />
+              ))}
+              {!tocLeaders.length ? <p className="py-3 text-xs text-gray-600">No ToC player reached 10 battles.</p> : null}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Contribution this window">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">Kill, healing and merit gains - the reward and promotion shortlist.</p>
+          <div className="mt-3">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-red-400/80">Kills</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {topKillers.map((player) => (
+                <PlayerLine key={player.id} player={player} detail={`+${(player.changes?.kills || 0).toLocaleString('en-US')}`} />
+              ))}
+              {!topKillers.length ? <p className="py-3 text-xs text-gray-600">No kill growth this window.</p> : null}
+            </div>
+            <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.16em] text-emerald-400/80">Healing</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {topHealers.map((player) => (
+                <PlayerLine key={player.id} player={player} detail={`+${(player.changes?.healing || 0).toLocaleString('en-US')}`} />
+              ))}
+              {!topHealers.length ? <p className="py-3 text-xs text-gray-600">No healing growth this window.</p> : null}
+            </div>
+            <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.16em] text-amber-300/80">Merits</p>
+            <div className="mt-1 divide-y divide-gray-800/80">
+              {topMerits.map((player) => (
+                <PlayerLine key={player.id} player={player} detail={`+${(player.changes?.merits || 0).toLocaleString('en-US')}`} />
+              ))}
+              {!topMerits.length ? <p className="py-3 text-xs text-gray-600">No merit growth this window.</p> : null}
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -345,7 +627,7 @@ function Overview({ data }) {
             <div className="mt-4 border-t border-gray-800 pt-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Snapshot health</p>
               <p className="mt-1 font-mono text-[11px] text-gray-400">Last snapshot: {health?.lastSnapshot || data.snapshotDate}</p>
-              <p className="mt-1 font-mono text-[11px] text-gray-500">{health ? `${health.count} usable of ${health.total} in window` : ''}</p>
+              <p className="mt-1 font-mono text-[11px] text-gray-500">{health ? `${health.count} of ${health.total} snapshots usable in this ${Math.max(0, (health.total || 1) - 1)}-interval window` : ''}</p>
               {gapDates.length ? (
                 <p className="mt-1 font-mono text-[11px] text-amber-300/80">
                   Gaps: {gapDates.map((point) => `${point.date.slice(5)} (${gapReason(point.reason)})`).join(', ')}
@@ -400,8 +682,8 @@ function Overview({ data }) {
       </div>
       <Card title="Server activity trend">
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures. Each point is labelled; a break in the line means no usable snapshot that day, never zero activity.</p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">{data.activityTimeline?.length || 0} days</p>
+          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures. Each point is labelled; a break in the line means no usable snapshot that day, never zero activity. The window holds {data.activityTimeline?.length || 0} daily snapshots — one per day — which form {Math.max(0, (data.activityTimeline?.length || 1) - 1)} day-over-day intervals, matching the rolling 7-day window.</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600" title={`${data.activityTimeline?.length || 0} daily snapshots · ${Math.max(0, (data.activityTimeline?.length || 1) - 1)} day-over-day intervals`}>{Math.max(0, (data.activityTimeline?.length || 1) - 1)} intervals</p>
         </div>
         {data.activityTimeline?.length > 1 ? <div className="mt-3 h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -428,11 +710,19 @@ function Overview({ data }) {
                 strokeWidth={2}
                 dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }}
                 activeDot={{ r: 5, fill: '#fbbf24' }}
-                label={({ x, y, value }) =>
-                  value === null || value === undefined || x === undefined ? null : (
-                    <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
-                  )
-                }
+                // Labels are gated behind the entrance animation in recharts 3
+                // (showLabels = !isAnimating); rendering instantly keeps the
+                // values on screen from the first frame.
+                isAnimationActive={false}
+                label={{
+                  // recharts v3: the label function only receives a value when
+                  // the series' dataKey is named explicitly.
+                  dataKey: 'activePlayers',
+                  content: ({ x, y, value }) =>
+                    value === null || value === undefined || x === undefined ? null : (
+                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
+                    ),
+                }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -477,13 +767,24 @@ function Overview({ data }) {
                     fill="url(#killGrowthGradient)"
                     radius={[0, 4, 4, 0]}
                     barSize={20}
-                    animationDuration={900}
+                    isAnimationActive={false}
                     label={{
                       position: 'right',
-                      fill: '#d1d5db',
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                      formatter: (value) => full(value),
+                      dataKey: 'kills',
+                      content: ({ x, y, value }) =>
+                        value === null || value === undefined ? null : (
+                          <text
+                            x={x}
+                            y={y}
+                            dy="0.32em"
+                            textAnchor="start"
+                            fontSize={10}
+                            fontFamily="monospace"
+                            fill="#d1d5db"
+                          >
+                            {full(value)}
+                          </text>
+                        ),
                     }}
                   />
                 </BarChart>
@@ -492,6 +793,7 @@ function Overview({ data }) {
           </div>
         </div>
       </Card>
+      <DecisionReports data={data} date={data.requestedDate || null} />
     </div>
   );
 }
@@ -526,7 +828,7 @@ function Players({ data }) {
           <p className="text-[11px] text-gray-600" title={ACTIVITY_DEFINITION}>{ACTIVITY_DEFINITION}</p>
         </div>
       </div>
-      <PlayerTable players={data.players} snapshotDate={data.snapshotDate} />
+      <PlayerTable players={data.players} snapshotDate={data.snapshotDate} date={data.requestedDate || null} />
     </div>
   );
 }
@@ -1311,7 +1613,7 @@ export default function LeadershipClient({ data }) {
           Server {data.server} · rolling 7 days: {data.periodStart} → {data.periodEnd}
           {health ? (
             <span className="text-gray-600">
-              {' '}· last snapshot {health.lastSnapshot} · {health.count} of {health.total} usable
+              {' '}· last snapshot {health.lastSnapshot} · {health.count} of {health.total} usable snapshots
               {health.gaps?.length ? ` · gaps: ${health.gaps.map((gap) => gap.date).join(', ')}` : ''}
             </span>
           ) : null}

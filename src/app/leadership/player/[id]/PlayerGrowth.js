@@ -98,10 +98,21 @@ export default function PlayerGrowth({ profile }) {
     );
   }
 
-  const powerRank = timeline.map((row) => ({
+  // Value labels ride on the data itself: the row's `powerLabel`/`gainLabel`
+  // holds the text where a label should draw and null where it should not.
+  // (recharts v3 label content functions receive no payload or data index -
+  // only x/y/value/viewBox - so the selection must be baked into the data.)
+  const labelStep = Math.max(1, Math.ceil(timeline.length / 6));
+  const powerRank = timeline.map((row, index) => ({
     date: row.date,
     power: row.power,
     rank: row.rank,
+    // Sparse anchors: roughly every 10th point plus the last, so a 60-point
+    // history stays readable instead of a wall of numbers.
+    powerLabel:
+      row.power != null && (index % labelStep === 0 || index === timeline.length - 1)
+        ? compact(row.power)
+        : null,
   }));
 
   // Real rank ticks: without an explicit domain a constant rank (a #1 lord)
@@ -113,18 +124,26 @@ export default function PlayerGrowth({ profile }) {
 
   const counters = ['kills', 'deaths', 'healed', 'merits'];
   const killGains = dailyGains(timeline, 'kills');
+  // Only the largest bars get a printed value: on 50 bars, labelling every one
+  // is a wall of overlapping numbers. The top gains are the ones a leader
+  // quotes, so those carry their figure.
+  const topGains = [...killGains]
+    .filter((row) => row.gain != null && row.gain > 0)
+    .sort((a, b) => b.gain - a.gain)
+    .slice(0, 4)
+    .map((row) => row.date);
+  const killRows = killGains.map((row) => ({
+    ...row,
+    gainLabel: topGains.includes(row.date) && row.gain != null ? row.gain.toLocaleString('en-US') : null,
+  }));
 
-  const storedDates = [...(profile.snapshotDates || [])].sort();
-  const previousStoredDate = (date) => {
-    let previous = null;
-    for (const candidate of storedDates) {
-      if (candidate < date) previous = candidate;
-      else break;
-    }
-    return previous;
-  };
-  const gatheredRows = gathered.map((row) => {
-    const previous = previousStoredDate(row.date);
+  // The gathered rows ARE the readings (gatheredSeries emits one row per
+  // date that has gathering metrics), so the previous row's date is the true
+  // previous reading - measuring against stored dates instead let a
+  // history-only date hide a two-week gap and plot a month of gathering as
+  // one day's.
+  const gatheredRows = gathered.map((row, index) => {
+    const previous = index > 0 ? gathered[index - 1].date : null;
     const gapDays = previous
       ? (new Date(`${row.date}T00:00:00Z`) - new Date(`${previous}T00:00:00Z`)) / 86400000
       : null;
@@ -177,7 +196,28 @@ export default function PlayerGrowth({ profile }) {
             contentStyle={TOOLTIP_STYLE}
             labelStyle={{ color: '#d1d5db' }}
           />
-          <Line yAxisId="power" type="monotone" dataKey="power" stroke="#fbbf24" strokeWidth={2} dot={false} connectNulls />
+          <Line
+            yAxisId="power"
+            type="monotone"
+            dataKey="power"
+            stroke="#fbbf24"
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+            isAnimationActive={false}
+            label={{
+              // The row's `powerLabel` field holds the text to draw (or null):
+              // recharts v3 content functions see value/x/y/viewBox but no
+              // payload, so the sparse selection is baked into the data.
+              dataKey: 'powerLabel',
+              content: ({ x, y, value }) =>
+                value == null || x === undefined ? null : (
+                  <text x={x} y={y - 8} textAnchor="middle" fontSize={10} fill="#fbbf24" className="chart-value-label">
+                    {value}
+                  </text>
+                ),
+            }}
+          />
           <Line yAxisId="rank" type="monotone" dataKey="rank" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
         </LineChart>
       </ChartFrame>
@@ -187,7 +227,7 @@ export default function PlayerGrowth({ profile }) {
           title="Daily kill gains"
           description="Kills added between consecutive snapshots - the rhythm of activity, not the total."
         >
-          <BarChart data={killGains} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
+          <BarChart data={killRows} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
             <CartesianGrid stroke="#2b2d31" vertical={false} />
             <XAxis dataKey="date" tick={TICK} tickFormatter={dateTick} axisLine={false} tickLine={false} minTickGap={30} />
             <YAxis tick={TICK} axisLine={false} tickLine={false} width={54} tickFormatter={(v) => compact(v)} />
@@ -198,7 +238,31 @@ export default function PlayerGrowth({ profile }) {
               labelStyle={{ color: '#d1d5db' }}
               cursor={{ fill: 'rgba(255,255,255,0.03)' }}
             />
-            <Bar dataKey="gain" fill="#fbbf24" radius={[3, 3, 0, 0]} maxBarSize={18} />
+            <Bar
+              dataKey="gain"
+              fill="#fbbf24"
+              radius={[3, 3, 0, 0]}
+              maxBarSize={18}
+              isAnimationActive={false}
+              label={{
+                // Only the top bars carry a printed value (see `killRows`).
+                dataKey: 'gainLabel',
+                content: ({ x, y, value, width }) =>
+                  value == null || x === undefined ? null : (
+                    <text
+                      x={x + (width || 0) / 2}
+                      y={y - 5}
+                      textAnchor="middle"
+                      fontSize={9}
+                      fontFamily="monospace"
+                      fill="#d1d5db"
+                      className="chart-value-label"
+                    >
+                      {value}
+                    </text>
+                  ),
+              }}
+            />
           </BarChart>
         </ChartFrame>
 
