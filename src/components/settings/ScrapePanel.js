@@ -189,8 +189,8 @@ export default function ScrapePanel() {
             <div className="text-sm font-medium text-neutral-100">Roster scraping</div>
             <p className="mt-0.5 max-w-xl text-[13px] text-gray-500">
               Runs the same commands as the terminal, on the bot host, and streams every line
-              here. DragonStats needs no login — the scrape mints its browser gate from a real
-              window on the bot host automatically.
+              here. DragonStats needs no login and no display — the scrape mints its browser gate
+              from a headless browser automatically.
             </p>
           </div>
         </div>
@@ -369,9 +369,6 @@ export default function ScrapePanel() {
           {options?.dragon?.gate && !options.dragon.gate.valid ? (
             <span className="text-amber-300">gate will be re-minted on the next scrape</span>
           ) : null}
-          {options?.canOpenWindow === false ? (
-            <span className="text-amber-300">no display on the bot host — gate minting unavailable (use Xvfb)</span>
-          ) : null}
         </div>
 
       </div>
@@ -434,10 +431,9 @@ export default function ScrapePanel() {
         </div>
 
         <p className="mt-2 text-[11px] text-gray-600">
-          The DragonStats scrape needs no login — it mints a short-lived browser gate from a real
-          window on the bot host (its bot detection refuses headless browsers, so a server needs
-          a display such as Xvfb). Jobs write straight to R2, and only one job runs at a time so
-          the two sources never race.
+          The DragonStats scrape needs no login and no display — it mints a short-lived browser
+          gate from a headless browser on the bot host. Jobs write straight to R2, and only one
+          job runs at a time so the two sources never race.
         </p>
       </div>
     </div>
