@@ -378,7 +378,10 @@ export default function LeadershipPlayerView({ profile, player, dashboard, date 
               </h1>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 <Chip tone="amber">{player.activity}</Chip>
-                <Chip>{player.status}</Chip>
+                {/* The role word for a Dormant player is "Dormant" too - showing
+                    both chips reads as a duplicate, so only roles that add
+                    information are shown. */}
+                {player.status !== player.activity ? <Chip>{player.status}</Chip> : null}
                 <Chip title={ACTIVITY_DEFINITION}>
                   {player.activityDays} active interval{player.activityDays === 1 ? '' : 's'}
                 </Chip>

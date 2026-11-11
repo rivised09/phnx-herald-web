@@ -710,7 +710,15 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     return { date, valid: true, reason: null, crawledAt: snap.crawledAt || null };
   });
   const validDates = meta.filter((entry) => entry.valid).map((entry) => entry.date);
-  if (!validDates.length) return null;
+  if (!validDates.length) {
+    // The index says these days exist but none of them could be used: the
+    // reads all failed, or every day holds another day's scan. That is "the
+    // data is unreadable right now", not "this page does not exist" - the
+    // page turns it into a retryable state instead of a 404.
+    throw new Error(
+      'No usable snapshot in the leadership window (snapshot reads failed, or every day is a wrong-scan copy).',
+    );
+  }
 
   const latestDate = validDates[validDates.length - 1];
   const baselineDate = validDates[0];
@@ -756,7 +764,9 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   }
 
   const latestSnapPlayers = snapshotData.get(latestDate);
-  if (!latestSnapPlayers || !latestSnapPlayers.size) return null;
+  if (!latestSnapPlayers || !latestSnapPlayers.size) {
+    throw new Error(`The snapshot for ${latestDate} could not be read (or holds no players).`);
+  }
 
   const baselineSnapPlayers = snapshotData.get(baselineDate);
 

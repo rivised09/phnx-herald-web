@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { readLeadership, readPlayer } from '../../../../lib/roster';
 import LeadershipPlayerView from './LeadershipPlayerView';
+import LeadershipUnavailable from '../../LeadershipUnavailable';
 
 const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -12,15 +13,27 @@ const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
  * component that owns the tabs. `?date=` pins both the profile and the
  * dashboard to the same snapshot window, so the two can never disagree
  * about which day they describe.
+ *
+ * A read that fails right now shows the retryable unavailable state rather
+ * than a 404/500 - only a genuinely unknown player id is allowed to notFound.
  */
 export default async function LeadershipPlayerPage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
   const date = sp?.date && DATE_PARAM.test(String(sp.date)) ? String(sp.date) : null;
-  const [profile, dashboard] = await Promise.all([
-    readPlayer(id, date),
-    readLeadership({ endDate: date }),
-  ]);
+
+  let profile = null;
+  let dashboard = null;
+  try {
+    [profile, dashboard] = await Promise.all([
+      readPlayer(id, date),
+      readLeadership({ endDate: date }),
+    ]);
+  } catch (error) {
+    console.error('[leadership/player] read failed:', error);
+    return <LeadershipUnavailable detail={error.message} />;
+  }
+
   const player = dashboard?.players?.find((item) => item.id === String(id));
   if (!profile || !dashboard || !player) notFound();
 

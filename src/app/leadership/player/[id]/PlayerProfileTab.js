@@ -54,7 +54,7 @@ function IdentityCard({ profile, player }) {
           ) : null}
         </div>
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800">
+      <div className="mt-4 grid grid-cols-1 gap-px overflow-hidden rounded border border-gray-800 bg-gray-800 sm:grid-cols-3">
         {[
           ['Current name', profile.name],
           ['Alliance', player.alliance],
@@ -76,15 +76,15 @@ function AlbumCard({ profile }) {
   const albums = (profile.allAlbums?.length ? profile.allAlbums : profile.albums) || [];
   if (!albums.length) {
     return (
-      <Card title="Album" description="Screenshots published on the source site.">
+      <Card title="Gallery">
         <p className="mt-3 text-sm text-gray-600">No albums recorded for this player.</p>
       </Card>
     );
   }
   return (
     <Card
-      title="Album"
-      description={`${albums.length} image${albums.length === 1 ? '' : 's'} across the whole history, newest first - each with its posting date and likes.`}
+      title={`Gallery (${albums.length})`}
+      description="Screenshots from the whole history, newest first - each with its posting date and likes. Click to open full size."
     >
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {albums.slice(0, 12).map((album) => (
@@ -102,6 +102,12 @@ function AlbumCard({ profile }) {
                 alt={album.caption || ''}
                 loading="lazy"
                 decoding="async"
+                onError={(event) => {
+                  // The image-proxy upstream is not always reachable; fall
+                  // back to the local placeholder instead of a broken box.
+                  const img = event.currentTarget;
+                  if (!img.src.endsWith('/placeholder.svg')) img.src = '/placeholder.svg';
+                }}
                 className="h-full w-full object-cover transition group-hover:scale-[1.02]"
               />
             </div>
@@ -122,94 +128,101 @@ function AlbumCard({ profile }) {
   );
 }
 
-function AchievementsCard({ profile }) {
+/**
+ * One labelled group for "how they are doing": achievements and the snapshot
+ * history side by side as subsections, both height-bounded so the page never
+ * becomes an endless wall of rows.
+ */
+function ProgressCard({ profile }) {
   const achievements = profile.achievements || [];
-  if (!achievements.length) {
-    return (
-      <Card title="Achievements">
-        <p className="mt-3 text-sm text-gray-600">No achievements recorded for this player.</p>
-      </Card>
-    );
-  }
-  return (
-    <Card
-      title={`Achievements (${achievements.length})`}
-      description="Progress at the latest snapshot; completed ones are marked."
-    >
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {achievements.slice(0, 24).map((achievement) => {
-          const progress = parseCount(achievement.progress);
-          const target = parseCount(achievement.target);
-          const done = achievement.completedAt || (progress != null && target != null && progress >= target);
-          const pct = progress != null && target ? Math.min(100, Math.round((progress / target) * 100)) : null;
-          return (
-            <div key={achievement.name} className="rounded border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="min-w-0 truncate text-xs text-gray-300" title={achievement.name}>
-                  {achievement.name}
-                </p>
-                {done ? <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" /> : null}
-              </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
-                  <div
-                    className={`h-full rounded-full ${done ? 'bg-emerald-400' : 'bg-amber-400'}`}
-                    style={{ width: `${pct ?? 0}%` }}
-                  />
-                </div>
-                <span className="font-mono text-[10px] text-gray-500">
-                  {achievement.progress ?? '—'}
-                  {achievement.target ? ` / ${achievement.target}` : ''}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {achievements.length > 24 ? (
-        <p className="mt-2 text-[11px] text-gray-600">Showing the newest 24 of {achievements.length}.</p>
-      ) : null}
-    </Card>
-  );
-}
-
-function HistoryCard({ profile }) {
   const history = [...(profile.history || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
-  if (!history.length) {
-    return (
-      <Card title="Snapshot history">
-        <p className="mt-3 text-sm text-gray-600">No snapshot history recorded.</p>
-      </Card>
-    );
-  }
   return (
     <Card
-      title={`Snapshot history (${history.length})`}
-      description="Every stored reading of power and rank, newest first."
+      title="Progress"
+      description="Achievement progress at the latest snapshot, and every stored reading of power and rank."
     >
-      <div className="mt-3 max-h-72 overflow-auto rounded border border-gray-800">
-        <table className="w-full text-left">
-          <thead className="sticky top-0 bg-discord-bg-darker font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">
-            <tr>
-              <th className="px-3 py-2 font-normal">Date</th>
-              <th className="px-3 py-2 text-right font-normal">Power</th>
-              <th className="px-3 py-2 text-right font-normal">Rank</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800/70">
-            {history.map((row) => (
-              <tr key={row.date}>
-                <td className="px-3 py-1.5 font-mono text-[11px] text-gray-400">{row.date}</td>
-                <td className="px-3 py-1.5 text-right font-mono text-[11px] text-gray-200">
-                  {row.power != null ? Number(row.power).toLocaleString('en-US') : '—'}
-                </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[11px] text-gray-500">
-                  {row.rank != null ? `#${row.rank}` : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mt-3 grid gap-5 lg:grid-cols-2">
+        <div className="min-w-0">
+          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-500">
+            Achievements ({achievements.length})
+          </p>
+          {!achievements.length ? (
+            <p className="mt-2 text-sm text-gray-600">No achievements recorded for this player.</p>
+          ) : (
+            <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {achievements.slice(0, 24).map((achievement) => {
+                const progress = parseCount(achievement.progress);
+                const target = parseCount(achievement.target);
+                const done =
+                  achievement.completedAt || (progress != null && target != null && progress >= target);
+                const pct =
+                  progress != null && target ? Math.min(100, Math.round((progress / target) * 100)) : null;
+                return (
+                  <div
+                    key={achievement.name}
+                    className="rounded border border-gray-800 bg-gray-500/[0.03] px-3 py-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-xs text-gray-300" title={achievement.name}>
+                        {achievement.name}
+                      </p>
+                      {done ? <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" /> : null}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
+                        <div
+                          className={`h-full rounded-full ${done ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                          style={{ width: `${pct ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="font-mono text-[10px] text-gray-500">
+                        {achievement.progress ?? '—'}
+                        {achievement.target ? ` / ${achievement.target}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {achievements.length > 24 ? (
+                <p className="text-[11px] text-gray-600">Showing the newest 24 of {achievements.length}.</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-gray-500">
+            Snapshot history ({history.length})
+          </p>
+          {!history.length ? (
+            <p className="mt-2 text-sm text-gray-600">No snapshot history recorded.</p>
+          ) : (
+            <div className="mt-2 max-h-72 overflow-auto rounded border border-gray-800">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-discord-bg-darker font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">
+                  <tr>
+                    <th className="px-3 py-2 font-normal">Date</th>
+                    <th className="px-3 py-2 text-right font-normal">Power</th>
+                    <th className="px-3 py-2 text-right font-normal">Rank</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/70">
+                  {history.map((row) => (
+                    <tr key={row.date}>
+                      <td className="px-3 py-1.5 font-mono text-[11px] text-gray-400">{row.date}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-[11px] text-gray-200">
+                        {row.power != null ? Number(row.power).toLocaleString('en-US') : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-[11px] text-gray-500">
+                        {row.rank != null ? `#${row.rank}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -225,7 +238,7 @@ function SourceMetricsCard({ profile }) {
     >
       <div className="mt-3 space-y-1.5">
         {sections.map((section, index) => (
-          <details key={section.section || `section-${index}`} className="rounded border border-gray-800 bg-gray-500/[0.03] px-3 py-2" open={index === 0}>
+          <details key={section.section || `section-${index}`} className="rounded border border-gray-800 bg-gray-500/[0.03] px-3 py-2">
             <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400">
               {section.section || 'Profile'}
               <span className="ml-2 text-gray-600">({section.rows.length})</span>
@@ -249,11 +262,8 @@ export default function PlayerProfileTab({ profile, player }) {
   return (
     <div className="space-y-5">
       <IdentityCard profile={profile} player={player} />
-      <div className="grid gap-5 lg:grid-cols-2">
-        <AlbumCard profile={profile} />
-        <AchievementsCard profile={profile} />
-      </div>
-      <HistoryCard profile={profile} />
+      <AlbumCard profile={profile} />
+      <ProgressCard profile={profile} />
       <SourceMetricsCard profile={profile} />
     </div>
   );
