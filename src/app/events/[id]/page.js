@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, Globe, MapPin, Timer, Volume2, Clapperboard } from 'lucide-react';
+import { ArrowLeft, Globe, MapPin, Timer, Volume2, Clapperboard, XCircle } from 'lucide-react';
 import StatusBadge from '../../../components/StatusBadge';
 import EventPhaseLine from '../../../components/EventPhaseLine';
 import TimezoneInfo from '../../../components/TimezoneInfo';
@@ -36,6 +36,7 @@ export default async function EventDetailPage({ params }) {
   if (!event) return null;
 
   const duration = formatDuration(event.startTime, event.endTime);
+  const isCancelled = event.status === 'CANCELLED';
 
   return (
     <div className="mx-auto max-w-2xl">

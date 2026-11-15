@@ -189,8 +189,8 @@ export default function ScrapePanel() {
             <div className="text-sm font-medium text-neutral-100">Roster scraping</div>
             <p className="mt-0.5 max-w-xl text-[13px] text-gray-500">
               Runs the same commands as the terminal, on the bot host, and streams every line
-              here. DragonStats needs no login and no display — the scrape mints its browser gate
-              from a headless browser automatically.
+              here. DragonStats needs no login — the scrape mints its browser gate automatically,
+              falling back to a real window under a virtual display (xvfb) when headless is refused.
             </p>
           </div>
         </div>
@@ -365,6 +365,12 @@ export default function ScrapePanel() {
               {options.dates?.length ?? 0} dates · newest {options.latest}
             </span>
           ) : null}
+          {options?.display === false && options?.xvfb?.available ? (
+            <span className="text-gray-400">virtual display (xvfb) ready</span>
+          ) : null}
+          {options?.display === false && options?.xvfb && !options.xvfb.available ? (
+            <span className="text-amber-300">no display and xvfb missing — install xvfb</span>
+          ) : null}
           {needsDate ? <span className="text-amber-300">pick a date to continue</span> : null}
           {options?.dragon?.gate && !options.dragon.gate.valid ? (
             <span className="text-amber-300">gate will be re-minted on the next scrape</span>
@@ -431,9 +437,9 @@ export default function ScrapePanel() {
         </div>
 
         <p className="mt-2 text-[11px] text-gray-600">
-          The DragonStats scrape needs no login and no display — it mints a short-lived browser
-          gate from a headless browser on the bot host. Jobs write straight to R2, and only one
-          job runs at a time so the two sources never race.
+          The DragonStats scrape needs no login — it mints a short-lived browser gate on the bot
+          host, using a virtual display (xvfb) when headless is refused. Jobs write straight to R2,
+          and only one job runs at a time so the two sources never race.
         </p>
       </div>
     </div>
