@@ -85,7 +85,15 @@ function SectionHeading({ eyebrow, title, description }) {
  * multi-selects need Ctrl-click, which nobody discovers on a dashboard. The
  * panel closes on an outside click; the caller owns the selected values.
  */
-function AllianceMultiSelect({ options, selected, onChange }) {
+function MultiSelect({
+  options,
+  selected,
+  onChange,
+  allLabel = 'All alliances',
+  unit = 'alliances',
+  title = 'Filter alliances',
+  emptyLabel = 'No alliances in this window.',
+}) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef(null);
 
@@ -108,10 +116,10 @@ function AllianceMultiSelect({ options, selected, onChange }) {
 
   const label =
     selected.length === 0
-      ? 'All alliances'
+      ? allLabel
       : selected.length === 1
         ? options.find((option) => option.value === selected[0])?.label || selected[0]
-        : `${selected.length} alliances`;
+        : `${selected.length} ${unit}`;
 
   return (
     <div className="relative" ref={boxRef}>
@@ -128,7 +136,7 @@ function AllianceMultiSelect({ options, selected, onChange }) {
       {open ? (
         <div className="absolute left-0 z-30 mt-1 w-64 max-w-[calc(100vw-2.5rem)] rounded-md border border-gray-700 bg-discord-bg-darker p-2 shadow-xl">
           <div className="flex items-center justify-between px-1 pb-1">
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Filter alliances</span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">{title}</span>
             {selected.length ? (
               <button
                 type="button"
@@ -155,7 +163,7 @@ function AllianceMultiSelect({ options, selected, onChange }) {
                 <span className="font-mono text-[10px] text-gray-600">{option.count}</span>
               </label>
             ))}
-            {!options.length ? <p className="px-1.5 py-2 text-xs text-gray-600">No alliances in this window.</p> : null}
+            {!options.length ? <p className="px-1.5 py-2 text-xs text-gray-600">{emptyLabel}</p> : null}
           </div>
         </div>
       ) : null}
@@ -435,7 +443,7 @@ function DecisionReports({ data, date }) {
     return players
       .filter((player) => (player.powerValue || 0) >= cut && (player.activityDays || 0) <= 1)
       .sort((a, b) => (b.powerValue || 0) - (a.powerValue || 0))
-      .slice(0, 8);
+      .slice(0, 10);
   }, [players]);
 
   /* --- Power movement --------------------------------------------------- */
@@ -444,7 +452,7 @@ function DecisionReports({ data, date }) {
       players
         .filter((player) => num(player.powerChange) > 0)
         .sort((a, b) => num(b.powerChange) - num(a.powerChange))
-        .slice(0, 5),
+        .slice(0, 10),
     [players],
   );
   const fallers = useMemo(
@@ -452,7 +460,7 @@ function DecisionReports({ data, date }) {
       players
         .filter((player) => num(player.powerChange) < 0)
         .sort((a, b) => num(a.powerChange) - num(b.powerChange))
-        .slice(0, 5),
+        .slice(0, 10),
     [players],
   );
 
@@ -668,10 +676,16 @@ function DecisionReports({ data, date }) {
 
 function Overview({ data }) {
   const [allianceFilter, setAllianceFilter] = useState([]);
+  // Empty means every band: the same convention as the alliance filter, so the
+  // chart opens on the full picture instead of needing a selection first.
+  const [bandFilter, setBandFilter] = useState([]);
   const windowKey = `${data.requestedDate || ''}|${data.snapshotDate || ''}`;
   // A new window means a new roster: selections from the old one may not exist
   // here, so the filter resets instead of quietly hiding every player.
-  useEffect(() => setAllianceFilter([]), [windowKey]);
+  useEffect(() => {
+    setAllianceFilter([]);
+    setBandFilter([]);
+  }, [windowKey]);
 
   // The first timeline entry is the window baseline: it has no previous
   // snapshot, so it only anchors the first interval. Dropping it makes the
@@ -714,9 +728,9 @@ function Overview({ data }) {
 
   // Band colours match the Activity distribution card below.
   const trendBands = [
-    { key: 'highlyActive', name: 'Highly Active', stroke: '#fbbf24' },
-    { key: 'active', name: 'Active', stroke: '#a1a1aa' },
-    { key: 'lowActivity', name: 'Low Activity', stroke: '#71717a' },
+    { key: 'highlyActive', name: 'Highly Active', stroke: '#60a5fa' },
+    { key: 'active', name: 'Active', stroke: '#4ade80' },
+    { key: 'lowActivity', name: 'Low Activity', stroke: '#9ca3af' },
   ];
 
   // Filtering sums the selected alliances' per-interval counts. Each lord is
@@ -737,11 +751,24 @@ function Overview({ data }) {
   const activePercent = Math.round((data.activityCounts.active / total) * 100);
   const highlyActive = data.players.filter((player) => player.activity === 'Highly Active').length;
   const activityBands = [
-    { name: 'Highly Active', players: highlyActive, fill: '#fbbf24' },
-    { name: 'Active', players: data.activityCounts.active - highlyActive, fill: '#a1a1aa' },
-    { name: 'Low Activity', players: data.activityCounts.low, fill: '#71717a' },
+    { name: 'Highly Active', players: highlyActive, fill: '#60a5fa' },
+    { name: 'Active', players: data.activityCounts.active - highlyActive, fill: '#4ade80' },
+    { name: 'Low Activity', players: data.activityCounts.low, fill: '#9ca3af' },
     { name: 'Dormant', players: data.activityCounts.dormant, fill: '#3f3f46' },
   ];
+  // Dormant lords never progressed in the window, so they are not a trend line;
+  // the three bands that do progress are the ones the filter offers.
+  const bandOptions = trendBands.map((band) => ({
+    value: band.name,
+    label: band.name,
+    count: activityBands.find((entry) => entry.name === band.name)?.players ?? 0,
+  }));
+  const visibleBands = bandFilter.length
+    ? trendBands.filter((band) => bandFilter.includes(band.name))
+    : trendBands;
+  // Band lines only render on the server-wide view; the alliance filter has no
+  // per-band split, so there the total is the only series.
+  const showBandLines = !allianceFilter.length && hasBandBreakdown;
   const killMovers = data.biggestKillGrowth.slice(0, 5).map((player) => ({
     name: player.name.length > 13 ? `${player.name.slice(0, 12)}…` : player.name,
     kills: Math.max(0, player.changes.kills || 0),
@@ -850,10 +877,21 @@ function Overview({ data }) {
               {activityIntervals.length} intervals
             </p>
             {hasAllianceBreakdown ? (
-              <AllianceMultiSelect
+              <MultiSelect
                 options={allianceOptions}
                 selected={allianceFilter}
                 onChange={setAllianceFilter}
+              />
+            ) : null}
+            {hasBandBreakdown && !allianceFilter.length ? (
+              <MultiSelect
+                options={bandOptions}
+                selected={bandFilter}
+                onChange={setBandFilter}
+                allLabel="All activity bands"
+                unit="bands"
+                title="Filter activity bands"
+                emptyLabel="No activity bands in this window."
               />
             ) : null}
             {allianceFilter.length ? (
@@ -890,18 +928,24 @@ function Overview({ data }) {
                   name,
                 ]}
                 labelFormatter={(value) => `Interval ending ${value}`}
+                // recharts sorts tooltip rows by name by default; keep the
+                // band order the legend uses (Highly Active, Active, Low).
+                itemSorter={null}
                 contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }}
                 labelStyle={{ color: '#d1d5db' }}
-                itemStyle={{ color: '#fbbf24' }}
+                // No itemStyle override: each row keeps its series colour.
               />
               <Line
                 type="monotone"
                 dataKey="activePlayers"
                 name="Active players"
-                stroke="#d4d4d8"
+                // The bands partition this total exactly, so the tooltip lists
+                // only the bands; the envelope line keeps its value labels.
+                tooltipType={showBandLines ? 'none' : undefined}
+                stroke="#fbbf24"
                 strokeWidth={2}
-                dot={{ r: 3, fill: '#202225', stroke: '#d4d4d8', strokeWidth: 2 }}
-                activeDot={{ r: 5, fill: '#d4d4d8' }}
+                dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#fbbf24' }}
                 // Labels are gated behind the entrance animation in recharts 3
                 // (showLabels = !isAnimating); rendering instantly keeps the
                 // values on screen from the first frame.
@@ -912,12 +956,12 @@ function Overview({ data }) {
                   dataKey: 'activePlayers',
                   content: ({ x, y, value }) =>
                     value === null || value === undefined || x === undefined ? null : (
-                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#d4d4d8">{value}</text>
+                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
                     ),
                 }}
               />
-              {!allianceFilter.length && hasBandBreakdown
-                ? trendBands.map((band) => (
+              {showBandLines
+                ? visibleBands.map((band) => (
                     <Line
                       key={band.key}
                       type="monotone"
@@ -925,6 +969,8 @@ function Overview({ data }) {
                       name={band.name}
                       stroke={band.stroke}
                       strokeWidth={1.5}
+                      strokeDasharray="2 4"
+                      strokeLinecap="round"
                       dot={false}
                       activeDot={{ r: 3, fill: band.stroke }}
                       isAnimationActive={false}
@@ -934,19 +980,19 @@ function Overview({ data }) {
             </LineChart>
           </ResponsiveContainer>
         </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">This window has no day-over-day intervals to plot — it needs at least two usable snapshots.</p>}
-        {!allianceFilter.length && hasBandBreakdown ? (
+        {showBandLines ? (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="flex items-center gap-1.5">
-              <span className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#d4d4d8' }} />
+              <span className="h-0.5 w-4 rounded-full" style={{ backgroundColor: '#fbbf24' }} />
               <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">All active</span>
             </span>
-            {trendBands.map((band) => (
+            {visibleBands.map((band) => (
               <span key={band.key} className="flex items-center gap-1.5">
-                <span className="h-0.5 w-3 rounded-full" style={{ backgroundColor: band.stroke }} />
+                <span className="w-4 border-t-2 border-dotted" style={{ borderColor: band.stroke }} />
                 <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">{band.name}</span>
               </span>
             ))}
-            <span className="font-mono text-[10px] text-gray-600">band lines show the whole server</span>
+            <span className="font-mono text-[10px] text-gray-600">server-wide; the alliance filter hides band lines</span>
           </div>
         ) : null}
         {allianceFilter.length && activityChartData.some((point) => point.filterUnavailable) ? (
@@ -1808,7 +1854,18 @@ export default function LeadershipClient({ data }) {
             ) : null}
             <button
               type="button"
-              onClick={() => router.refresh()}
+              onClick={async () => {
+                // Purge the server's roster cache first: router.refresh() on its
+                // own re-reads the page through the same cache entry, which is
+                // why a finished scrape used to need a hard reload (or a date
+                // switch) before it showed up.
+                try {
+                  await fetch('/api/roster/revalidate', { method: 'POST' });
+                } catch {
+                  // A failed purge still gets the normal re-read below.
+                }
+                router.refresh();
+              }}
               className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-discord-bg-darker px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200"
               title="Reload the latest snapshot"
             >

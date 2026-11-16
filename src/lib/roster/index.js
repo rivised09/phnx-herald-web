@@ -38,7 +38,10 @@ const { getLeadershipDashboard } = roster;
  */
 
 const LATEST_TTL = 60;
-const PINNED_TTL = 3600;
+// A pinned date is not immutable after all: a repair or a backfill rewrites it,
+// and an hour of caching meant a corrected window stayed wrong until the TTL
+// ran out. Two minutes keeps the read cheap without hiding a fix.
+const PINNED_TTL = 120;
 
 const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 const LORD_ID = /^\d+$/;

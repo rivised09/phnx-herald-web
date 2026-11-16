@@ -42,8 +42,8 @@ export function filesEnabled() {
  * that is misconfigured - is thrown, because serving an empty roster as if the
  * server were quiet would hide a broken deployment.
  */
-async function readJson(path) {
-  const url = `${dataBase()}/${path}`;
+async function fetchJson(path, query = '') {
+  const url = `${dataBase()}/${path}${query}`;
   const response = await fetch(url, {
     cache: 'no-store',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -53,6 +53,47 @@ async function readJson(path) {
     throw new Error(`Roster file ${path} answered ${response.status}.`);
   }
   return response.json();
+}
+
+/** How long one publish stamp is reused before the index is read again. */
+const GENERATION_TTL_MS = 10_000;
+let generationCache = { query: '', at: 0 };
+
+/**
+ * The bucket's publish stamp, as a cache-busting query string.
+ *
+ * A scrape overwrites the same keys (snapshots, player files, summaries), and
+ * the bucket sits behind an edge cache that honours each object's max-age - so
+ * without a changing URL the site kept serving the previous publish for up to
+ * an hour and only a hard reload (or switching snapshot dates) shook it loose.
+ * `index.json` is written last by every publish and carries `generatedAt`, so
+ * tagging every read with it makes the edge cache one copy *per publish* while
+ * still letting repeat reads hit that copy.
+ *
+ * Only the index itself is read unversioned, and the stamp is held for a few
+ * seconds so one page render does not fetch it more than once.
+ */
+async function generation() {
+  if (Date.now() - generationCache.at < GENERATION_TTL_MS) return generationCache.query;
+  const index = await fetchJson('index.json');
+  const query = index?.generatedAt ? `?v=${encodeURIComponent(index.generatedAt)}` : '';
+  generationCache = { query, at: Date.now() };
+  return query;
+}
+
+/**
+ * One JSON document, or null when it is not there.
+ *
+ * A missing file is a normal answer, not an error: a player id nobody has
+ * crawled, a date that was never stored. Anything else - a timeout, a bucket
+ * that is misconfigured - is thrown, because serving an empty roster as if the
+ * server were quiet would hide a broken deployment.
+ *
+ * `versioned: false` is for `index.json` itself: the publish stamp cannot
+ * version the file that defines it.
+ */
+async function readJson(path, { versioned = true } = {}) {
+  return fetchJson(path, versioned ? await generation() : '');
 }
 
 function failure(status, detail) {
@@ -146,7 +187,7 @@ export async function getStoredRoster({ date = null, avatars = true } = {}) {
     return failure('not_configured', err.message);
   }
 
-  const index = await readJson('index.json');
+  const index = await readJson('index.json', { versioned: false });
   if (!index || !Array.isArray(index.dates) || !index.dates.length) {
     return failure('awaiting_sync', `Server ${number} has no snapshots yet.`);
   }
@@ -392,7 +433,7 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
  * callofstats entry.
  */
 async function unaffiliatedDetail(date) {
-  const index = await readJson('index.json');
+  const index = await readJson('index.json', { versioned: false });
   if (!index || !Array.isArray(index.dates) || !index.dates.length) return null;
 
   const requested = snapshotDateParam(date);
@@ -630,7 +671,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   const number = Number(serverId());
 
   // Read index to get all stored dates
-  const index = await readJson('index.json');
+  const index = await readJson('index.json', { versioned: false });
   if (!index || !Array.isArray(index.dates) || !index.dates.length) return null;
 
   const wanted =
