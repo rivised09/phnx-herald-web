@@ -7,7 +7,6 @@ import { useT } from '../i18n/LocaleProvider';
 
 /**
  * The home page's lookup box, offered on the roster detail pages as well.
- *
  * Those pages render one account or one alliance, so they carry no roster to
  * match against: the cached home endpoint supplies it once on mount and the
  * list is then filtered in the browser exactly as it is at home. Until that
