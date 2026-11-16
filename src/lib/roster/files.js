@@ -955,6 +955,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
    * drawing a 0 that never happened. The first date has nothing to compare
    * against and is null for the same reason.
    */
+  const progressedByDate = new Map();
   const activityTimeline = meta.map((entry, index) => {
     if (!entry.valid) {
       return { date: entry.date, activePlayers: null, gap: true, reason: entry.reason };
@@ -974,6 +975,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     // lord is attributed to the alliance the players table shows for them, so
     // summing selected alliances always equals the total.
     const byAlliance = {};
+    const progressedIds = new Set();
     for (const [id, file] of playerFiles) {
       const currentM = file.metrics?.[entry.date] || {};
       const previousM = file.metrics?.[previousDate] || {};
@@ -993,12 +995,41 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
           currentPower > previousPowerVal)
       ) {
         activePlayers += 1;
+        progressedIds.add(id);
         const alliance = allianceByLord.get(id) || 'Not In An Alliance';
         byAlliance[alliance] = (byAlliance[alliance] || 0) + 1;
       }
     }
+    progressedByDate.set(entry.date, progressedIds);
     return { date: entry.date, activePlayers, gap: false, reason: null, byAlliance };
   });
+
+  /**
+   * Per-band split of each interval, so the trend can draw Highly Active /
+   * Active / Low Activity lines. A lord's band is how many intervals they
+   * progressed in - the same count behind `players[].activity` - so the three
+   * counts always add up to `activePlayers`, including lords who progressed
+   * in the window but are absent from the newest snapshot.
+   */
+  const bandByLord = new Map();
+  for (const ids of progressedByDate.values()) {
+    for (const id of ids) bandByLord.set(id, (bandByLord.get(id) || 0) + 1);
+  }
+  const bandOf = (intervals) =>
+    intervals >= 6 ? 'Highly Active' : intervals >= 4 ? 'Active' : 'Low Activity';
+  for (const point of activityTimeline) {
+    const ids = progressedByDate.get(point.date);
+    if (!ids) continue;
+    point.highlyActive = 0;
+    point.active = 0;
+    point.lowActivity = 0;
+    for (const id of ids) {
+      const band = bandOf(bandByLord.get(id) || 0);
+      if (band === 'Highly Active') point.highlyActive += 1;
+      else if (band === 'Active') point.active += 1;
+      else point.lowActivity += 1;
+    }
+  }
 
   const latestMeta = meta.find((entry) => entry.date === latestDate);
 

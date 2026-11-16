@@ -339,6 +339,9 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     healing: sumChange('healing'),
     merits: sumChange('merits'),
   };
+  // Lord ids that progressed per interval date, collected while the activity
+  // timeline is built so each interval can also be split into bands below.
+  const progressedByDate = new Map();
   const activityTimeline = windowDates.map((date, index) => {
     const snapshot = snapshotByDate.get(date);
     if (!snapshot) {
@@ -356,6 +359,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     // lord is attributed to the alliance the players table shows for them, so
     // the selected buckets always sum to the total.
     const byAlliance = {};
+    const progressedIds = new Set();
     currentRows.forEach((row) => {
       const history = metricsByLord.get(row.lordId) || new Map();
       const currentValues = history.get(snapshot.id) || [];
@@ -371,12 +375,37 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
         previousPower !== null && previousPower !== undefined &&
         Number(currentPower) > Number(previousPower))) {
         activePlayers += 1;
+        progressedIds.add(row.lordId);
         const alliance = row.alliance?.name || 'Not In An Alliance';
         byAlliance[alliance] = (byAlliance[alliance] || 0) + 1;
       }
     });
+    progressedByDate.set(date, progressedIds);
     return { date, activePlayers, gap: false, reason: null, byAlliance };
   });
+
+  // Per-band split of each interval, matching the Players table's bands: a
+  // lord's band is the number of intervals they progressed in, so the three
+  // counts always add up to `activePlayers`.
+  const bandByLord = new Map();
+  for (const ids of progressedByDate.values()) {
+    for (const id of ids) bandByLord.set(id, (bandByLord.get(id) || 0) + 1);
+  }
+  const bandOf = (intervals) =>
+    intervals >= 6 ? 'Highly Active' : intervals >= 4 ? 'Active' : 'Low Activity';
+  for (const point of activityTimeline) {
+    const ids = progressedByDate.get(point.date);
+    if (!ids) continue;
+    point.highlyActive = 0;
+    point.active = 0;
+    point.lowActivity = 0;
+    for (const id of ids) {
+      const band = bandOf(bandByLord.get(id) || 0);
+      if (band === 'Highly Active') point.highlyActive += 1;
+      else if (band === 'Active') point.active += 1;
+      else point.lowActivity += 1;
+    }
+  }
 
   const gapDates = windowDates.filter((day) => !snapshotByDate.has(day));
   const snapshotDate = latest.snapshotDate.toISOString().slice(0, 10);

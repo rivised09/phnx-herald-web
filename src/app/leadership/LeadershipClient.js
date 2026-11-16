@@ -705,6 +705,20 @@ function Overview({ data }) {
     [activityIntervals],
   );
 
+  // Summaries published before the per-band split have no band keys; the band
+  // lines stay hidden rather than drawing three series of zeros.
+  const hasBandBreakdown = useMemo(
+    () => activityIntervals.some((point) => typeof point.highlyActive === 'number'),
+    [activityIntervals],
+  );
+
+  // Band colours match the Activity distribution card below.
+  const trendBands = [
+    { key: 'highlyActive', name: 'Highly Active', stroke: '#fbbf24' },
+    { key: 'active', name: 'Active', stroke: '#a1a1aa' },
+    { key: 'lowActivity', name: 'Low Activity', stroke: '#71717a' },
+  ];
+
   // Filtering sums the selected alliances' per-interval counts. Each lord is
   // in exactly one bucket, so the selected total can never exceed the whole.
   const activityChartData = useMemo(() => {
@@ -824,7 +838,9 @@ function Overview({ data }) {
             one interval, labelled by the day it ends: the window’s{' '}
             {data.activityTimeline?.length || 0} daily snapshots form {activityIntervals.length}{' '}
             intervals, so the axis shows {activityIntervals.length} dates. A break in the line means
-            no usable snapshot for that interval, never zero activity.
+            no usable snapshot for that interval, never zero activity. The three band lines split
+            each interval by how many of the window's intervals that lord progressed in: Highly
+            Active 6-7, Active 4-5, Low Activity 1-3, so the bands add up to the total.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <p
@@ -871,7 +887,7 @@ function Overview({ data }) {
                       : allianceFilter.length
                         ? `${value} players in selected alliances`
                         : `${value} players`,
-                  'Active players',
+                  name,
                 ]}
                 labelFormatter={(value) => `Interval ending ${value}`}
                 contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }}
@@ -881,10 +897,11 @@ function Overview({ data }) {
               <Line
                 type="monotone"
                 dataKey="activePlayers"
-                stroke="#fbbf24"
+                name="Active players"
+                stroke="#d4d4d8"
                 strokeWidth={2}
-                dot={{ r: 3, fill: '#202225', stroke: '#fbbf24', strokeWidth: 2 }}
-                activeDot={{ r: 5, fill: '#fbbf24' }}
+                dot={{ r: 3, fill: '#202225', stroke: '#d4d4d8', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#d4d4d8' }}
                 // Labels are gated behind the entrance animation in recharts 3
                 // (showLabels = !isAnimating); rendering instantly keeps the
                 // values on screen from the first frame.
@@ -895,13 +912,43 @@ function Overview({ data }) {
                   dataKey: 'activePlayers',
                   content: ({ x, y, value }) =>
                     value === null || value === undefined || x === undefined ? null : (
-                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#fbbf24">{value}</text>
+                      <text x={x} y={y - 9} textAnchor="middle" fontSize={10} fill="#d4d4d8">{value}</text>
                     ),
                 }}
               />
+              {!allianceFilter.length && hasBandBreakdown
+                ? trendBands.map((band) => (
+                    <Line
+                      key={band.key}
+                      type="monotone"
+                      dataKey={band.key}
+                      name={band.name}
+                      stroke={band.stroke}
+                      strokeWidth={1.5}
+                      dot={false}
+                      activeDot={{ r: 3, fill: band.stroke }}
+                      isAnimationActive={false}
+                    />
+                  ))
+                : null}
             </LineChart>
           </ResponsiveContainer>
         </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">This window has no day-over-day intervals to plot — it needs at least two usable snapshots.</p>}
+        {!allianceFilter.length && hasBandBreakdown ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex items-center gap-1.5">
+              <span className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#d4d4d8' }} />
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">All active</span>
+            </span>
+            {trendBands.map((band) => (
+              <span key={band.key} className="flex items-center gap-1.5">
+                <span className="h-0.5 w-3 rounded-full" style={{ backgroundColor: band.stroke }} />
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">{band.name}</span>
+              </span>
+            ))}
+            <span className="font-mono text-[10px] text-gray-600">band lines show the whole server</span>
+          </div>
+        ) : null}
         {allianceFilter.length && activityChartData.some((point) => point.filterUnavailable) ? (
           <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300/80">
             Some intervals were published before the alliance breakdown existed — republish the summary to filter them.
