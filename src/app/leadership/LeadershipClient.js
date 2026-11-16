@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, BookOpen, Download, Info, MessageCircle, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, Download, Filter, Info, MessageCircle, RefreshCw, Search } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { deleteSavedRowRoster, getSettings, updateSettings } from '../../lib/api';
 import MeritFilter, { MERIT_TYPES } from '../../components/home/MeritFilter';
@@ -74,6 +74,91 @@ function SectionHeading({ eyebrow, title, description }) {
         <h2 className="mt-1 text-lg font-semibold tracking-tight text-neutral-100">{title}</h2>
       </div>
       {description ? <p className="max-w-xl text-xs leading-relaxed text-gray-500 sm:text-right">{description}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Multi-select for the activity trend's alliance filter.
+ *
+ * A checkbox panel rather than a native `<select multiple>`: native
+ * multi-selects need Ctrl-click, which nobody discovers on a dashboard. The
+ * panel closes on an outside click; the caller owns the selected values.
+ */
+function AllianceMultiSelect({ options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (boxRef.current && !boxRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const chosen = new Set(selected);
+  const toggle = (value) => {
+    const next = new Set(chosen);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    onChange([...next]);
+  };
+
+  const label =
+    selected.length === 0
+      ? 'All alliances'
+      : selected.length === 1
+        ? options.find((option) => option.value === selected[0])?.label || selected[0]
+        : `${selected.length} alliances`;
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border border-gray-800 bg-discord-bg-darker px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-400 transition hover:border-gray-600 hover:text-neutral-200"
+      >
+        <Filter className="h-3 w-3 shrink-0" />
+        <span className="max-w-[9rem] truncate">{label}</span>
+        <ChevronDown className={`h-3 w-3 shrink-0 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 z-30 mt-1 w-64 max-w-[calc(100vw-2.5rem)] rounded-md border border-gray-700 bg-discord-bg-darker p-2 shadow-xl">
+          <div className="flex items-center justify-between px-1 pb-1">
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">Filter alliances</span>
+            {selected.length ? (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="cursor-pointer font-mono text-[9px] uppercase tracking-[0.14em] text-amber-300/80 transition hover:text-amber-200"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {options.map((option) => (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-300 transition hover:bg-gray-500/[0.06]"
+              >
+                <input
+                  type="checkbox"
+                  checked={chosen.has(option.value)}
+                  onChange={() => toggle(option.value)}
+                  className="h-3 w-3 accent-amber-400"
+                />
+                <span className="min-w-0 flex-1 truncate" title={option.value}>{option.label}</span>
+                <span className="font-mono text-[10px] text-gray-600">{option.count}</span>
+              </label>
+            ))}
+            {!options.length ? <p className="px-1.5 py-2 text-xs text-gray-600">No alliances in this window.</p> : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -582,6 +667,58 @@ function DecisionReports({ data, date }) {
 }
 
 function Overview({ data }) {
+  const [allianceFilter, setAllianceFilter] = useState([]);
+  const windowKey = `${data.requestedDate || ''}|${data.snapshotDate || ''}`;
+  // A new window means a new roster: selections from the old one may not exist
+  // here, so the filter resets instead of quietly hiding every player.
+  useEffect(() => setAllianceFilter([]), [windowKey]);
+
+  // The first timeline entry is the window baseline: it has no previous
+  // snapshot, so it only anchors the first interval. Dropping it makes the
+  // chart show exactly the intervals (7 for a 7-day window), each labelled by
+  // the day it ends - matching the "7 intervals" badge instead of listing 8
+  // snapshot dates.
+  const activityIntervals = useMemo(
+    () => (data.activityTimeline || []).slice(1),
+    [data.activityTimeline],
+  );
+
+  const allianceOptions = useMemo(() => {
+    const counts = new Map();
+    for (const player of data.players || []) {
+      const value = player.alliance || 'Not In An Alliance';
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([value, count]) => ({
+        value,
+        label: value === 'Not In An Alliance' ? 'No alliance' : value,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [data.players]);
+
+  // Older published summaries predate the per-alliance breakdown; the filter
+  // stays hidden until one is republished rather than silently showing zeros.
+  const hasAllianceBreakdown = useMemo(
+    () => activityIntervals.some((point) => point.byAlliance && Object.keys(point.byAlliance).length > 0),
+    [activityIntervals],
+  );
+
+  // Filtering sums the selected alliances' per-interval counts. Each lord is
+  // in exactly one bucket, so the selected total can never exceed the whole.
+  const activityChartData = useMemo(() => {
+    if (!allianceFilter.length) return activityIntervals;
+    const chosen = new Set(allianceFilter);
+    return activityIntervals.map((point) => {
+      if (point.activePlayers === null || point.activePlayers === undefined) return point;
+      if (!point.byAlliance) return { ...point, activePlayers: null, filterUnavailable: true };
+      let selected = 0;
+      for (const alliance of chosen) selected += point.byAlliance[alliance] || 0;
+      return { ...point, activePlayers: selected };
+    });
+  }, [activityIntervals, allianceFilter]);
+
   const total = data.players.length || 1;
   const activePercent = Math.round((data.activityCounts.active / total) * 100);
   const highlyActive = data.players.filter((player) => player.activity === 'Highly Active').length;
@@ -608,7 +745,7 @@ function Overview({ data }) {
     : reason === 'wrong-scan' ? 'snapshot holds another day’s data'
     : reason === 'after-gap' ? 'no previous snapshot to compare against'
     : 'no usable snapshot';
-  const gapDates = (data.activityTimeline || []).filter((point) => point.gap);
+  const gapDates = activityIntervals.filter((point) => point.gap);
   const topKillGrowth = data.biggestKillGrowth[0];
   return (
     <div className="space-y-5">
@@ -681,24 +818,62 @@ function Overview({ data }) {
         </Card>
       </div>
       <Card title="Server activity trend">
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-gray-500">Players showing measurable progression between snapshot captures. Each point is labelled; a break in the line means no usable snapshot that day, never zero activity. The window holds {data.activityTimeline?.length || 0} daily snapshots — one per day — which form {Math.max(0, (data.activityTimeline?.length || 1) - 1)} day-over-day intervals, matching the rolling 7-day window.</p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600" title={`${data.activityTimeline?.length || 0} daily snapshots · ${Math.max(0, (data.activityTimeline?.length || 1) - 1)} day-over-day intervals`}>{Math.max(0, (data.activityTimeline?.length || 1) - 1)} intervals</p>
+        <div className="mt-2 space-y-2">
+          <p className="text-xs leading-relaxed text-gray-500">
+            Players who showed measurable progression from one snapshot to the next. Each point is
+            one interval, labelled by the day it ends: the window’s{' '}
+            {data.activityTimeline?.length || 0} daily snapshots form {activityIntervals.length}{' '}
+            intervals, so the axis shows {activityIntervals.length} dates. A break in the line means
+            no usable snapshot for that interval, never zero activity.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p
+              className="font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600"
+              title={`${data.activityTimeline?.length || 0} daily snapshots · ${activityIntervals.length} day-over-day intervals`}
+            >
+              {activityIntervals.length} intervals
+            </p>
+            {hasAllianceBreakdown ? (
+              <AllianceMultiSelect
+                options={allianceOptions}
+                selected={allianceFilter}
+                onChange={setAllianceFilter}
+              />
+            ) : null}
+            {allianceFilter.length ? (
+              <button
+                type="button"
+                onClick={() => setAllianceFilter([])}
+                className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.14em] text-amber-300/80 transition hover:text-amber-200"
+              >
+                Show all
+              </button>
+            ) : null}
+            {data.activityTimeline?.[0]?.date ? (
+              <p className="font-mono text-[10px] text-gray-600">
+                baseline {data.activityTimeline[0].date.slice(5)}
+              </p>
+            ) : null}
+          </div>
         </div>
-        {data.activityTimeline?.length > 1 ? <div className="mt-3 h-56 w-full">
+        {activityIntervals.length ? <div className="mt-3 h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data.activityTimeline} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
+            <LineChart data={activityChartData} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid stroke="#2b2d31" vertical={false} />
               <XAxis dataKey="date" tick={{ fill: '#71717a', fontSize: 10 }} tickFormatter={(value) => value.slice(5)} axisLine={false} tickLine={false} />
               <YAxis allowDecimals={false} width={32} tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip
                 formatter={(value, name, props) => [
-                  value === null || value === undefined
-                    ? `No usable snapshot (${gapReason(props.payload.reason)})`
-                    : `${value} players`,
+                  props?.payload?.filterUnavailable
+                    ? 'Alliance breakdown not published for this interval'
+                    : value === null || value === undefined
+                      ? `No usable snapshot (${gapReason(props.payload.reason)})`
+                      : allianceFilter.length
+                        ? `${value} players in selected alliances`
+                        : `${value} players`,
                   'Active players',
                 ]}
-                labelFormatter={(value) => `Snapshot ${value}`}
+                labelFormatter={(value) => `Interval ending ${value}`}
                 contentStyle={{ background: '#202225', border: '1px solid #3f4147', borderRadius: 4, fontSize: 11 }}
                 labelStyle={{ color: '#d1d5db' }}
                 itemStyle={{ color: '#fbbf24' }}
@@ -726,7 +901,12 @@ function Overview({ data }) {
               />
             </LineChart>
           </ResponsiveContainer>
-        </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">At least two snapshots are required to show the activity trend.</p>}
+        </div> : <p className="mt-6 py-8 text-center text-sm text-gray-600">This window has no day-over-day intervals to plot — it needs at least two usable snapshots.</p>}
+        {allianceFilter.length && activityChartData.some((point) => point.filterUnavailable) ? (
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300/80">
+            Some intervals were published before the alliance breakdown existed — republish the summary to filter them.
+          </p>
+        ) : null}
         {gapDates.length ? (
           <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-amber-300/80">
             Breaks: {gapDates.map((point) => `${point.date} — ${gapReason(point.reason)}`).join(' · ')}

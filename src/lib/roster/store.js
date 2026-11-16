@@ -352,6 +352,10 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       return { date, activePlayers: null, gap: true, reason: 'after-gap' };
     }
     let activePlayers = 0;
+    // Per-alliance counts for the dashboard's activity filter: each counted
+    // lord is attributed to the alliance the players table shows for them, so
+    // the selected buckets always sum to the total.
+    const byAlliance = {};
     currentRows.forEach((row) => {
       const history = metricsByLord.get(row.lordId) || new Map();
       const currentValues = history.get(snapshot.id) || [];
@@ -367,9 +371,11 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
         previousPower !== null && previousPower !== undefined &&
         Number(currentPower) > Number(previousPower))) {
         activePlayers += 1;
+        const alliance = row.alliance?.name || 'Not In An Alliance';
+        byAlliance[alliance] = (byAlliance[alliance] || 0) + 1;
       }
     });
-    return { date, activePlayers, gap: false, reason: null };
+    return { date, activePlayers, gap: false, reason: null, byAlliance };
   });
 
   const gapDates = windowDates.filter((day) => !snapshotByDate.has(day));
