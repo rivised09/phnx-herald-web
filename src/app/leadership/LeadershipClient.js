@@ -725,6 +725,15 @@ function Overview({ data }) {
     () => activityIntervals.some((point) => typeof point.highlyActive === 'number'),
     [activityIntervals],
   );
+  // Summaries published before the per-alliance band split can only draw the
+  // total once an alliance is selected; republishing restores the band lines.
+  const hasAllianceBandBreakdown = useMemo(
+    () =>
+      activityIntervals.some(
+        (point) => point.bandsByAlliance && Object.keys(point.bandsByAlliance).length > 0,
+      ),
+    [activityIntervals],
+  );
 
   // Band colours match the Activity distribution card below.
   const trendBands = [
@@ -738,12 +747,38 @@ function Overview({ data }) {
   const activityChartData = useMemo(() => {
     if (!allianceFilter.length) return activityIntervals;
     const chosen = new Set(allianceFilter);
+    // The selected alliances' bands, so the dotted lines follow the filter
+    // instead of being dropped. Without per-alliance bands they stay null,
+    // which draws a break rather than a fake zero.
+    const selectedBands = (point) => {
+      if (!point.bandsByAlliance) return { highlyActive: null, active: null, lowActivity: null };
+      let highlyActive = 0;
+      let active = 0;
+      let lowActivity = 0;
+      for (const alliance of chosen) {
+        const bucket = point.bandsByAlliance[alliance];
+        if (!bucket) continue;
+        highlyActive += bucket.highlyActive || 0;
+        active += bucket.active || 0;
+        lowActivity += bucket.lowActivity || 0;
+      }
+      return { highlyActive, active, lowActivity };
+    };
     return activityIntervals.map((point) => {
       if (point.activePlayers === null || point.activePlayers === undefined) return point;
-      if (!point.byAlliance) return { ...point, activePlayers: null, filterUnavailable: true };
+      if (!point.byAlliance) {
+        return {
+          ...point,
+          activePlayers: null,
+          filterUnavailable: true,
+          highlyActive: null,
+          active: null,
+          lowActivity: null,
+        };
+      }
       let selected = 0;
       for (const alliance of chosen) selected += point.byAlliance[alliance] || 0;
-      return { ...point, activePlayers: selected };
+      return { ...point, activePlayers: selected, ...selectedBands(point) };
     });
   }, [activityIntervals, allianceFilter]);
 
@@ -758,17 +793,25 @@ function Overview({ data }) {
   ];
   // Dormant lords never progressed in the window, so they are not a trend line;
   // the three bands that do progress are the ones the filter offers.
+  // The counts describe whatever the chart is currently scoped to: with an
+  // alliance selected the band filter is narrowing that selection, so its
+  // numbers have to be the selection's lords rather than the whole server's.
+  const bandScope = allianceFilter.length
+    ? data.players.filter((player) =>
+        allianceFilter.includes(player.alliance || 'Not In An Alliance'),
+      )
+    : data.players;
   const bandOptions = trendBands.map((band) => ({
     value: band.name,
     label: band.name,
-    count: activityBands.find((entry) => entry.name === band.name)?.players ?? 0,
+    count: bandScope.filter((player) => player.activity === band.name).length,
   }));
   const visibleBands = bandFilter.length
     ? trendBands.filter((band) => bandFilter.includes(band.name))
     : trendBands;
-  // Band lines only render on the server-wide view; the alliance filter has no
-  // per-band split, so there the total is the only series.
-  const showBandLines = !allianceFilter.length && hasBandBreakdown;
+  // Band lines render server-wide, and for an alliance selection as long as the
+  // published summaries carry the per-alliance split.
+  const showBandLines = hasBandBreakdown && (!allianceFilter.length || hasAllianceBandBreakdown);
   const killMovers = data.biggestKillGrowth.slice(0, 5).map((player) => ({
     name: player.name.length > 13 ? `${player.name.slice(0, 12)}…` : player.name,
     kills: Math.max(0, player.changes.kills || 0),
@@ -788,6 +831,28 @@ function Overview({ data }) {
     : 'no usable snapshot';
   const gapDates = activityIntervals.filter((point) => point.gap);
   const topKillGrowth = data.biggestKillGrowth[0];
+  // Two answers to "when are we busiest": the whole recorded history, and the
+  // last seven measured days - they disagree whenever the kingdom is on a run.
+  const dayRankings = [
+    {
+      key: 'all',
+      title: 'All time',
+      range:
+        data.activityDays?.firstDate && data.activityDays?.lastDate
+          ? `${data.activityDays.firstDate} → ${data.activityDays.lastDate}`
+          : null,
+      days: data.activityDays?.topDays || [],
+    },
+    {
+      key: 'recent',
+      title: 'Last 7 days',
+      range:
+        data.activityDays?.recent?.firstDate && data.activityDays?.recent?.lastDate
+          ? `${data.activityDays.recent.firstDate} → ${data.activityDays.recent.lastDate}`
+          : null,
+      days: data.activityDays?.recent?.topDays || [],
+    },
+  ].filter((section) => section.days.length);
   return (
     <div className="space-y-5">
       <Card title="Kingdom activity">
@@ -883,7 +948,7 @@ function Overview({ data }) {
                 onChange={setAllianceFilter}
               />
             ) : null}
-            {hasBandBreakdown && !allianceFilter.length ? (
+            {showBandLines ? (
               <MultiSelect
                 options={bandOptions}
                 selected={bandFilter}
@@ -992,7 +1057,9 @@ function Overview({ data }) {
                 <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-gray-500">{band.name}</span>
               </span>
             ))}
-            <span className="font-mono text-[10px] text-gray-600">server-wide; the alliance filter hides band lines</span>
+            <span className="font-mono text-[10px] text-gray-600">
+              {allianceFilter.length ? 'selected alliances' : 'server-wide'}
+            </span>
           </div>
         ) : null}
         {allianceFilter.length && activityChartData.some((point) => point.filterUnavailable) ? (
@@ -1006,6 +1073,59 @@ function Overview({ data }) {
           </p>
         ) : null}
       </Card>
+      {dayRankings.length ? (
+        <Card title="Most active day">
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">
+            The busiest days, ranked by how many lords progressed since the previous snapshot - once
+            across the whole recorded history, once over the last seven measured days. Days with no
+            recorded lord history are left out.
+          </p>
+          <div className="mt-3 grid gap-x-6 gap-y-5 sm:grid-cols-2">
+            {dayRankings.map((section) => (
+              <div key={section.key}>
+                <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-gray-600">
+                  {section.title}
+                  {section.range ? (
+                    <span className="ml-2 font-mono text-[9px] tracking-normal text-gray-700">{section.range}</span>
+                  ) : null}
+                </p>
+                <div className="mt-1.5 divide-y divide-gray-800/80">
+                  {section.days.slice(0, 3).map((day, index) => (
+                    <div key={day.date} className="flex items-baseline justify-between gap-3 py-1.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono text-[10px] text-gray-600">#{index + 1}</span>
+                        <span
+                          className={
+                            index === 0
+                              ? 'text-xl font-semibold tracking-tight text-amber-200'
+                              : index === 1
+                                ? 'text-sm text-gray-200'
+                                : 'text-xs text-gray-400'
+                          }
+                        >
+                          {day.date}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={
+                            index === 0
+                              ? 'font-mono text-base text-amber-200'
+                              : 'font-mono text-xs text-gray-300'
+                          }
+                        >
+                          {day.activePlayers.toLocaleString('en-US')}
+                        </p>
+                        <p className="font-mono text-[10px] text-gray-600">{day.label}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
       <Card title="Activity intelligence">
         <div className="mt-3 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
           <div>

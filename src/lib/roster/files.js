@@ -665,6 +665,34 @@ function assembleLeadership({ summary, index, wanted, number }) {
  * same control the public home page has), so a leader can inspect a past
  * week instead of being locked to the current one.
  */
+/**
+ * The all-history weekday ranking (`leadership/days.json`).
+ *
+ * The page itself only ever loads one 7-day window, so a "most active day"
+ * ranking across every stored day cannot be derived here. The bot aggregates it
+ * from the summaries it already publishes; when that file has never been built
+ * this is null and the card stays hidden rather than inventing a ranking.
+ */
+async function readDayRanking() {
+  const doc = await readJson('leadership/days.json').catch(() => null);
+  if (!doc || doc.version !== 1 || !Array.isArray(doc.weekdays) || !doc.weekdays.length) {
+    return null;
+  }
+  return {
+    weekdays: doc.weekdays,
+    topDays: Array.isArray(doc.topDays) ? doc.topDays : [],
+    recent: {
+      firstDate: doc.recent?.firstDate || null,
+      lastDate: doc.recent?.lastDate || null,
+      topDays: Array.isArray(doc.recent?.topDays) ? doc.recent.topDays : [],
+    },
+    dayCount: doc.dayCount || 0,
+    firstDate: doc.firstDate || null,
+    lastDate: doc.lastDate || null,
+    generatedAt: doc.generatedAt || null,
+  };
+}
+
 export async function getLeadershipDashboard({ endDate = null } = {}) {
   if (!filesEnabled()) return null;
 
@@ -681,6 +709,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   // The window ends at the pinned date, or at the newest stored snapshot, and
   // spans seven days back from there - eight calendar days, seven intervals.
   const end = wanted || index.dates[0];
+  const activityDays = await readDayRanking();
 
   /**
    * Fast path: the bot publishes a pre-aggregated summary of each window
@@ -695,7 +724,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
    */
   const summary = await readJson(`leadership/${end}.json`).catch(() => null);
   if (summary && summary.version === 1 && Array.isArray(summary.players)) {
-    return assembleLeadership({ summary, index, wanted, number });
+    return { ...assembleLeadership({ summary, index, wanted, number }), activityDays };
   }
 
   const windowStartIso = new Date(
@@ -1064,12 +1093,27 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     point.highlyActive = 0;
     point.active = 0;
     point.lowActivity = 0;
+    // The same split per alliance, so filtering the trend by alliance keeps the
+    // three band lines instead of dropping to a single total for the selection.
+    const bandsByAlliance = {};
     for (const id of ids) {
       const band = bandOf(bandByLord.get(id) || 0);
-      if (band === 'Highly Active') point.highlyActive += 1;
-      else if (band === 'Active') point.active += 1;
-      else point.lowActivity += 1;
+      const alliance = allianceByLord.get(id) || 'Not In An Alliance';
+      const bucket =
+        bandsByAlliance[alliance] ||
+        (bandsByAlliance[alliance] = { highlyActive: 0, active: 0, lowActivity: 0 });
+      if (band === 'Highly Active') {
+        point.highlyActive += 1;
+        bucket.highlyActive += 1;
+      } else if (band === 'Active') {
+        point.active += 1;
+        bucket.active += 1;
+      } else {
+        point.lowActivity += 1;
+        bucket.lowActivity += 1;
+      }
     }
+    point.bandsByAlliance = bandsByAlliance;
   }
 
   const latestMeta = meta.find((entry) => entry.date === latestDate);
@@ -1105,7 +1149,7 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
     },
   };
 
-  return assembleLeadership({ summary: windowSummary, index, wanted, number });
+  return { ...assembleLeadership({ summary: windowSummary, index, wanted, number }), activityDays };
 }
 
 /** An alliance at one date, or at its newest snapshot. */

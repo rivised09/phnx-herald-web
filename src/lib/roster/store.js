@@ -393,18 +393,36 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
   }
   const bandOf = (intervals) =>
     intervals >= 6 ? 'Highly Active' : intervals >= 4 ? 'Active' : 'Low Activity';
+  // The alliance the players table shows for each lord, so a filtered trend
+  // keeps its band lines and still agrees with the table.
+  const allianceNameByLord = new Map(
+    currentRows.map((row) => [row.lordId, row.alliance?.name || 'Not In An Alliance']),
+  );
   for (const point of activityTimeline) {
     const ids = progressedByDate.get(point.date);
     if (!ids) continue;
     point.highlyActive = 0;
     point.active = 0;
     point.lowActivity = 0;
+    const bandsByAlliance = {};
     for (const id of ids) {
       const band = bandOf(bandByLord.get(id) || 0);
-      if (band === 'Highly Active') point.highlyActive += 1;
-      else if (band === 'Active') point.active += 1;
-      else point.lowActivity += 1;
+      const alliance = allianceNameByLord.get(id) || 'Not In An Alliance';
+      const bucket =
+        bandsByAlliance[alliance] ||
+        (bandsByAlliance[alliance] = { highlyActive: 0, active: 0, lowActivity: 0 });
+      if (band === 'Highly Active') {
+        point.highlyActive += 1;
+        bucket.highlyActive += 1;
+      } else if (band === 'Active') {
+        point.active += 1;
+        bucket.active += 1;
+      } else {
+        point.lowActivity += 1;
+        bucket.lowActivity += 1;
+      }
     }
+    point.bandsByAlliance = bandsByAlliance;
   }
 
   const gapDates = windowDates.filter((day) => !snapshotByDate.has(day));
