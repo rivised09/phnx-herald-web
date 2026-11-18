@@ -12,6 +12,7 @@ import RosterSection from '../../components/home/RosterSection';
 import ServerStats from '../../components/home/ServerStats';
 import { buildSuggestions } from '../../components/home/suggestions';
 import LanguageButton from '../../components/i18n/LanguageButton';
+import { MP_BANDS, matchesMpBand, formatMpRatio } from '../../lib/roster/mpRatio';
 import Onboarding from '../../components/i18n/Onboarding';
 
 const PAGE_SIZE = 25;
@@ -187,6 +188,8 @@ function PlayerTable({ players, snapshotDate, date }) {
   const [query, setQuery] = useState('');
   const [selectedAlliances, setSelectedAlliances] = useState([]);
   const [sort, setSort] = useState('power');
+  // Merits-to-power shortlist for this table, same bands as the public roster.
+  const [mpBand, setMpBand] = useState('all');
   const [page, setPage] = useState(1);
   const [meritTypes, setMeritTypes] = useState([]);
   const [meritOrder, setMeritOrder] = useState('desc');
@@ -202,7 +205,9 @@ function PlayerTable({ players, snapshotDate, date }) {
       if (filter === 'low') return player.activity === 'Low Activity';
       if (filter === 'dormant') return player.activity === 'Dormant';
       return true;
-    }).filter((player) => selectedAlliances.length === 0 || selectedAlliances.includes(player.alliance))
+    })
+      .filter((player) => matchesMpBand(player.mpRatio, mpBand))
+      .filter((player) => selectedAlliances.length === 0 || selectedAlliances.includes(player.alliance))
       .filter((player) => !normalizedQuery || [player.name, player.id, player.alliance].some((value) => String(value || '').toLowerCase().includes(normalizedQuery)));
     // A merit selection orders by the total of the chosen troop types (the
     // RoW team-building view); highest-first by default, same as the public
@@ -221,10 +226,10 @@ function PlayerTable({ players, snapshotDate, date }) {
       if (sort === 'kills') return (b.changes.kills || 0) - (a.changes.kills || 0);
       return b.powerValue - a.powerValue;
     });
-  }, [filter, meritOrder, meritTypes, players, query, selectedAlliances, sort]);
+  }, [filter, meritOrder, meritTypes, mpBand, players, query, selectedAlliances, sort]);
   useEffect(() => {
     setPage(1);
-  }, [filter, query, selectedAlliances, sort]);
+  }, [filter, mpBand, query, selectedAlliances, sort]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pagePlayers = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const firstResult = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
@@ -238,7 +243,7 @@ function PlayerTable({ players, snapshotDate, date }) {
    */
   const exportCsv = () => {
     const header = [
-      'Player', 'Game ID', 'Alliance', 'Power', 'Activity', 'Active intervals',
+      'Player', 'Game ID', 'Alliance', 'Power', 'M/P ratio', 'Activity', 'Active intervals',
       'Kill change', 'Death change', 'Healing change', 'Merit change',
     ];
     const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -247,6 +252,7 @@ function PlayerTable({ players, snapshotDate, date }) {
       player.id,
       player.alliance,
       player.powerFull ?? '',
+      player.mpRatio != null ? `${Number(player.mpRatio).toFixed(2)}%` : '',
       player.activity,
       player.activityDays,
       player.changes.kills ?? '',
@@ -301,6 +307,18 @@ function PlayerTable({ players, snapshotDate, date }) {
             ))}
           </div>
         </details>
+        <select
+          value={mpBand}
+          onChange={(event) => setMpBand(event.target.value)}
+          aria-label="Filter players by merits-to-power ratio"
+          className="rounded-md border border-gray-800 bg-discord-bg-darker px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 outline-none"
+        >
+          {MP_BANDS.map((band) => (
+            <option key={band.key} value={band.key}>
+              M/P: {band.label}
+            </option>
+          ))}
+        </select>
         <select value={sort} onChange={(event) => setSort(event.target.value)} className="rounded-md border border-gray-800 bg-discord-bg-darker px-3 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-gray-400 outline-none">
           <option value="power">Sort: Power</option>
           <option value="activity">Sort: Activity</option>
@@ -340,7 +358,7 @@ function PlayerTable({ players, snapshotDate, date }) {
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[800px] text-left">
           <thead className="border-b border-gray-800 font-mono text-[10px] uppercase tracking-[0.14em] text-gray-600">
-            <tr>{['Player', 'Power', 'Activity', 'Kill Δ', 'Death Δ', 'Heal Δ', 'Merit Δ'].map((label) => <th key={label} className="px-3 py-2 font-normal">{label}</th>)}</tr>
+            <tr>{['Player', 'Power', 'M/P Ratio', 'Activity', 'Kill Δ', 'Death Δ', 'Heal Δ', 'Merit Δ'].map((label) => <th key={label} className="px-3 py-2 font-normal">{label}</th>)}</tr>
           </thead>
           <tbody className="divide-y divide-gray-800/80">
             {pagePlayers.map((player) => (
@@ -359,6 +377,16 @@ function PlayerTable({ players, snapshotDate, date }) {
               >
                 <td className="px-3 py-3"><Link href={playerHref(player.id, date)} className="text-neutral-100 transition hover:text-amber-300">{player.name}</Link><p className="font-mono text-[10px] text-gray-600">#{player.id}</p></td>
                 <td className="px-3 py-3 font-mono text-amber-200" title={player.powerFull != null ? `${full(player.powerFull)} power` : undefined}>{player.powerFull != null ? full(player.powerFull) : player.power}</td>
+                <td
+                  className="px-3 py-3 font-mono tabular-nums text-amber-200"
+                  title={
+                    player.meritsTotal != null
+                      ? `${full(player.meritsTotal)} merits on ${player.powerFull != null ? full(player.powerFull) : 'unknown'} power`
+                      : 'No merits recorded for this window'
+                  }
+                >
+                  {formatMpRatio(player.mpRatio)}
+                </td>
                 <td className="px-3 py-3 text-gray-300" title={ACTIVITY_DEFINITION}><p>{player.activity}</p><p className="font-mono text-[10px] text-gray-600">{player.activityDays} active interval{player.activityDays === 1 ? '' : 's'}</p></td>
                 <td className="px-3 py-3 font-mono text-emerald-300" title={player.changes.kills === null ? 'No change data for this window' : undefined}>{full(player.changes.kills, { signed: true })}</td>
                 <td className="px-3 py-3 font-mono text-gray-400" title={player.changes.deaths === null ? 'No change data for this window' : undefined}>{full(player.changes.deaths, { signed: true })}</td>

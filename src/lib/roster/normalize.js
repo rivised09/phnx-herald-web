@@ -215,7 +215,9 @@ function repairEntry(file, wanted, entry) {
     set('War Stats', 'Kill to Heal Ratio', percent((kills / healed) * 100));
   }
 
-  const merits = number(get('KvK Merits') ?? get('Merits'));
+  // Current KvK merits, never the lifetime total: the ratio is about the
+  // fight a lord is in now, and it matches the M/P column on both lists.
+  const merits = number(get('KvK Merits') ?? get('Merits') ?? get('PvP Points'));
   const power = number(get('Current Power'));
   if (merits !== null && power) {
     set('War Stats', 'Merit to Power Ratio', percent((merits / power) * 100));
@@ -223,9 +225,17 @@ function repairEntry(file, wanted, entry) {
 }
 
 /**
- * The requested day with the newest earlier callofstats-only rows filled in.
- * Values the day already has always win, except for cumulative counters that
- * a newer source left at zero.
+ * The requested day, with older rows filled in only where both days came from
+ * the same source.
+ *
+ * CallofStats stopped being scraped on 2026-10-25; the days after it are
+ * DragonStats scans. Filling a DragonStats day from the last callofstats day
+ * is what put a September Division ("S3-2638 | Season 3"), ToC/RoW blocks and
+ * lifetime season figures under "Source figures · <today>" as if that scan had
+ * published them. A DragonStats day therefore shows exactly what its scan said,
+ * and the callofstats dates keep their own values - that source is preserved
+ * on the days it really covered. Achievements and the avatar still fall back,
+ * because they belong to the account rather than to one date.
  */
 export function carryForwardEntry(file, wanted) {
   const source = file?.byDate?.[wanted];
@@ -236,6 +246,11 @@ export function carryForwardEntry(file, wanted) {
     sections: normalizeSections(source.sections),
     achievements: source.achievements ? source.achievements.map((item) => ({ ...item })) : [],
   };
+
+  // DragonStats writes its own section; callofstats never did.
+  const fromDragonStats = (entry.sections || []).some(
+    (block) => block.section === 'Dragon Stats',
+  );
 
   const rowsByLabel = new Map();
   for (const block of entry.sections) {
@@ -255,28 +270,30 @@ export function carryForwardEntry(file, wanted) {
 
   for (const day of earlier) {
     const older = file.byDate[day];
-    for (const block of normalizeSections(older.sections)) {
-      for (const row of block.rows) {
-        const current = rowsByLabel.get(row.label);
-        if (current) {
-          if (
-            NON_ZERO_LABELS.has(row.label) &&
-            number(current.value) === 0 &&
-            number(row.value) !== 0
-          ) {
-            current.value = row.value;
+    if (!fromDragonStats) {
+      for (const block of normalizeSections(older.sections)) {
+        for (const row of block.rows) {
+          const current = rowsByLabel.get(row.label);
+          if (current) {
+            if (
+              NON_ZERO_LABELS.has(row.label) &&
+              number(current.value) === 0 &&
+              number(row.value) !== 0
+            ) {
+              current.value = row.value;
+            }
+            continue;
           }
-          continue;
+          let target = bySection.get(block.section);
+          if (!target) {
+            target = { section: block.section, rows: [] };
+            bySection.set(block.section, target);
+            sections.push(target);
+          }
+          const added = { ...row };
+          target.rows.push(added);
+          rowsByLabel.set(row.label, added);
         }
-        let target = bySection.get(block.section);
-        if (!target) {
-          target = { section: block.section, rows: [] };
-          bySection.set(block.section, target);
-          sections.push(target);
-        }
-        const added = { ...row };
-        target.rows.push(added);
-        rowsByLabel.set(row.label, added);
       }
     }
     if (!entry.achievements.length && older.achievements?.length) {

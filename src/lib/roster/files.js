@@ -130,6 +130,64 @@ function powerOf(value) {
 }
 
 /**
+ * The KVK season a date was played in, from `seasons.json`.
+ *
+ * DragonStats states a kingdom's division on the dashboard ("KVK / SOS /
+ * SoS1-3126 / Nov 17 - Dec 29") and lists every season with its kingdoms on
+ * /kvk/list - never inside a scan. The bot publishes that table next to the
+ * snapshots, so a date can be placed in its season without a browser. Null
+ * when the day falls between two seasons for this kingdom, which is a real
+ * answer: it then has no Division.
+ */
+async function seasonOnDate(date) {
+  if (!date) return null;
+  const doc = await readJson('seasons.json').catch(() => null);
+  const seasons = doc?.seasons;
+  if (!Array.isArray(seasons) || !seasons.length) return null;
+  const number = Number(serverId());
+  return (
+    seasons.find(
+      (season) =>
+        Array.isArray(season.servers) &&
+        season.servers.includes(number) &&
+        season.start <= date &&
+        (!season.end || date <= season.end),
+    ) || null
+  );
+}
+
+/**
+ * Adds the Division (and the season's span) to a day that has none.
+ *
+ * callofstats wrote a Division row into the snapshot itself, so the days it
+ * scraped already carry one and are left exactly as recorded; DragonStats does
+ * not send that field, and before this the row simply disappeared from those
+ * days.
+ */
+async function attachDivision(entry, date) {
+  if (!entry?.sections) return;
+  const hasDivision = entry.sections.some((block) =>
+    (block.rows || []).some((row) => row.label === 'Division'),
+  );
+  if (hasDivision) return;
+  const season = await seasonOnDate(date);
+  if (!season) return;
+
+  let block = entry.sections.find((section) => section.section === '');
+  if (!block) {
+    block = { section: '', rows: [] };
+    entry.sections.unshift(block);
+  }
+  block.rows.unshift({ label: 'Division', value: season.label });
+  if (season.start && season.end) {
+    block.rows.splice(1, 0, {
+      label: 'Season Window',
+      value: `${season.start} → ${season.end}`,
+    });
+  }
+}
+
+/**
  * One snapshot's alliances, with the "Not In An Alliance" bucket added when
  * some players have no alliance. Ranks are recomputed from power because the
  * bucket belongs in its real place, not after the named alliances.
@@ -203,14 +261,17 @@ export async function getStoredRoster({ date = null, avatars = true } = {}) {
   // skips that pass entirely - it reads one full history file per player
   // (~86MB for a 304-lord server), which callers that only need names, power
   // and alliances (the leadership Alliances tab and search) never display.
-  const avatarById = avatars ? await loadAvatars(body.players) : new Map();
+  // The same pass reads that day's Merits, which the list needs for the M/P
+  // ratio: the snapshot itself only stores Rank and Power per lord.
+  const extras = avatars ? await loadPlayerExtras(body.players, body.snapshot.date) : new Map();
 
   const age = staleDays(body.snapshot.date);
   const alliances = alliancesWithUnaffiliated(body.alliances, body.players);
   const players = body.players.map((player) => ({
     ...player,
     allianceId: player.allianceId || UNAFFILIATED.name,
-    avatar: player.avatar || avatarById.get(player.id) || null,
+    avatar: player.avatar || extras.get(player.id)?.avatar || null,
+    ...ratioFields(player, extras.get(player.id)?.merits ?? null),
   }));
   return {
     ...body,
@@ -226,28 +287,58 @@ export async function getStoredRoster({ date = null, avatars = true } = {}) {
 }
 
 /**
- * Reads each player's own history file and returns the latest non-null avatar
- * for any player whose snapshot avatar is missing. Runs in parallel so the
- * home page doesn't pay for players that already have an avatar.
+ * Current KvK merits and the M/P ratio for one lord on one date.
+ *
+ * The ratio is the same figure the profile calls "Merit to Power Ratio":
+ * current KvK merits / power * 100, rounded to two decimals so a sorting or
+ * filtering client sees the number it prints. Lifetime `Total Merits` is
+ * deliberately not used - it never resets, so it says nothing about how hard
+ * a lord is fighting now. Null when either side is unknown (no merits metric,
+ * or a missing power) rather than a misleading zero.
  */
-async function loadAvatars(players) {
-  const missing = players.filter((p) => !p.avatar).map((p) => p.id);
-  if (!missing.length) return new Map();
+function ratioFields(player, merits, powerOverride = null) {
+  const power = powerOverride ?? powerOf(player.stats?.Power);
+  const value = merits === null || merits === undefined ? null : Number(merits);
+  return {
+    meritsTotal: Number.isFinite(value) ? value : null,
+    mpRatio:
+      Number.isFinite(value) && power > 0 ? Math.round((value / power) * 10000) / 100 : null,
+  };
+}
+
+/**
+ * Reads each player's own history file for the two facts the snapshot does not
+ * carry: the latest non-null avatar (DragonStats writes null) and that day's
+ * Merits, which the M/P ratio divides by power. Runs in parallel because the
+ * home page needs both for every row.
+ */
+async function loadPlayerExtras(players, date) {
+  if (!players.length) return new Map();
   const results = await Promise.allSettled(
-    missing.map((id) => readJson(`players/${id}.json`)),
+    players.map((player) => readJson(`players/${player.id}.json`)),
   );
   const map = new Map();
-  for (let i = 0; i < missing.length; i++) {
+  for (let i = 0; i < players.length; i++) {
     const result = results[i];
     if (result.status !== 'fulfilled' || !result.value) continue;
     const file = result.value;
-    for (const date of file.dates) {
-      const value = file.byDate?.[date]?.avatar;
+    let avatar = null;
+    for (const day of file.dates) {
+      const value = file.byDate?.[day]?.avatar;
       if (value) {
-        map.set(missing[i], value);
+        avatar = value;
         break;
       }
     }
+    // Current KvK merits, the same counter the profile's War Stats calls
+    // "Merits" - not the lifetime `Total Merits` figure. It reads 0 between
+    // KvK events, which is the source telling us there is nothing to divide.
+    const metrics = file.metrics?.[date] || {};
+    const merits = metrics['KvK Merits'] ?? metrics.Merits ?? metrics['PvP Points'];
+    map.set(players[i].id, {
+      avatar,
+      merits: merits === null || merits === undefined ? null : Number(merits),
+    });
   }
   return map;
 }
@@ -352,6 +443,7 @@ export async function getPlayerDetail(sourceId, { date = null } = {}) {
   const wanted = requested && file.dates.includes(requested) ? requested : file.dates[0];
   const entry = carryForwardEntry(file, wanted);
   if (!entry) return null;
+  await attachDivision(entry, wanted);
 
   const history = file.dates
     .slice()
@@ -723,7 +815,21 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
    * shared by both paths so they can never drift apart.
    */
   const summary = await readJson(`leadership/${end}.json`).catch(() => null);
-  if (summary && summary.version === 1 && Array.isArray(summary.players)) {
+  /**
+   * A summary written before the per-alliance band split carries `byAlliance`
+   * but no `bandsByAlliance`, and the trend can only draw its band lines for
+   * the intervals that have that split - which made a freshly scraped date
+   * lose its band lines under an alliance filter while older dates kept them.
+   * Such a summary is treated as absent so the full read below computes the
+   * split from the player files; the next scrape republishes it anyway.
+   */
+  const summaryHasBands =
+    summary && Array.isArray(summary.timeline)
+      ? summary.timeline.some(
+          (point) => point?.bandsByAlliance && Object.keys(point.bandsByAlliance).length > 0,
+        )
+      : false;
+  if (summary && summary.version === 1 && Array.isArray(summary.players) && summaryHasBands) {
     return { ...assembleLeadership({ summary, index, wanted, number }), activityDays };
   }
 
@@ -896,6 +1002,23 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       ]),
     );
 
+    // Same rule as the bot summary: a KvK merit counter that drops inside the
+    // window has restarted, so `last - first` would read as a loss for the
+    // lords earning the most. After a reset the current value is the gain.
+    const meritSeries = metricObservations
+      .map((item) => item.values.merits)
+      .filter((value) => value !== null && value !== undefined);
+    if (meritSeries.length < 2) changes.merits = null;
+    else {
+      let resetSeen = false;
+      let gained = 0;
+      for (let i = 1; i < meritSeries.length; i += 1) {
+        if (meritSeries[i] >= meritSeries[i - 1]) gained += meritSeries[i] - meritSeries[i - 1];
+        else resetSeen = true;
+      }
+      changes.merits = resetSeen ? meritSeries[meritSeries.length - 1] : gained;
+    }
+
     const activeObservations = observations.slice(1).filter((observation, index) => {
       const before = observations[index].values;
       return ['kills', 'merits', 'healing'].some(
@@ -953,6 +1076,13 @@ export async function getLeadershipDashboard({ endDate = null } = {}) {
       // listed a `merits` metric after it, and the duplicate key silently
       // overwrote the per-troop object with a number.
       merits: snapPlayer.merits || null,
+      // Merits for the M/P ratio: the last observed value in the window, and
+      // the ratio against this snapshot's power - the same two numbers the
+      // profile and the public home list print.
+      ...ratioFields(
+        { stats: { Power: snapPlayer.power } },
+        lastMetrics['KvK Merits'] ?? lastMetrics.Merits ?? lastMetrics['PvP Points'],
+      ),
       activity,
       status,
       powerChange,

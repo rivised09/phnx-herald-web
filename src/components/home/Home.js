@@ -8,6 +8,7 @@ import RosterTabs from './RosterTabs';
 import MeritFilter from './MeritFilter';
 import SnapshotFilter from './SnapshotFilter';
 import ServerStats from './ServerStats';
+import { MP_BANDS, matchesMpBand } from '../../lib/roster/mpRatio';
 import { ErrorNotice, Loading, Notice, RosterFooter } from './shared';
 import LoadingOverlay from '../LoadingOverlay';
 import { buildSuggestions } from './suggestions';
@@ -79,6 +80,9 @@ export default function Home({
   const [query, setQuery] = useState('');
   const [meritTypes, setMeritTypes] = useState([]);
   const [meritOrder, setMeritOrder] = useState('desc');
+  // Merits-to-power band for the players tab: '' style shortlist ("10% and
+  // above", "below 2%", ...) rather than yet another sort.
+  const [mpBand, setMpBand] = useState('all');
   const t = useT();
 
   const alliances = data?.alliances || [];
@@ -124,16 +128,26 @@ export default function Home({
   // A merit selection reorders the players tab by the total of the chosen
   // troop types (All = all four); with nothing selected the stored power-rank
   // order stands.
+  // The M/P band narrows the tab first, so the merit ordering below applies to
+  // the shortlist the visitor asked for ("who is at 10% and above").
+  const bandedPlayers = useMemo(
+    () =>
+      mpBand === 'all'
+        ? players
+        : players.filter((player) => matchesMpBand(player.mpRatio, mpBand)),
+    [players, mpBand],
+  );
+
   const sortedPlayers = useMemo(() => {
-    if (!meritTypes.length) return players;
+    if (!meritTypes.length) return bandedPlayers;
     // Comparator reads high-to-low, so ascending flips the sign.
     const sign = meritOrder === 'asc' ? -1 : 1;
     const total = (player) =>
       meritTypes.reduce((sum, key) => sum + (Number(player.merits?.[key]) || 0), 0);
-    return players
+    return bandedPlayers
       .slice()
       .sort((a, b) => sign * (total(b) - total(a)));
-  }, [players, meritTypes, meritOrder]);
+  }, [bandedPlayers, meritTypes, meritOrder]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorNotice error={error} />;
@@ -236,6 +250,25 @@ export default function Home({
                 descLabel={t('sort.desc')}
                 ascLabel={t('sort.asc')}
               />
+              {/* M/P shortlist: the same bands the leadership players tab
+                  offers, so both lists answer "who is 10% and above". */}
+              <label className="inline-flex items-center gap-1.5 rounded-md border border-gray-800 bg-discord-surface px-2 py-1">
+                <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-gray-600">
+                  M/P
+                </span>
+                <select
+                  value={mpBand}
+                  onChange={(event) => setMpBand(event.target.value)}
+                  aria-label="Filter players by merits-to-power ratio"
+                  className="cursor-pointer bg-transparent font-mono text-[10px] uppercase tracking-[0.12em] text-gray-300 outline-none"
+                >
+                  {MP_BANDS.map((band) => (
+                    <option key={band.key} value={band.key} className="bg-discord-surface">
+                      {band.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 
@@ -264,13 +297,13 @@ export default function Home({
                 key: 'players',
                 label: t('home.tabPlayers'),
                 shortLabel: t('home.tabPlayersShort'),
-                count: players.length,
+                count: bandedPlayers.length,
                 panel: (
                   <RosterSection
                     // Keyed per filter combination too, so changing the merit
                     // filter starts the list back at its first page instead of
                     // keeping a page index meant for another ordering.
-                    key={`players-${[...meritTypes].sort().join('-')}-${meritOrder}`}
+                    key={`players-${[...meritTypes].sort().join('-')}-${meritOrder}-${mpBand}`}
                     items={sortedPlayers}
                     perPage={10}
                     emptyLabel={t('home.emptyPlayers')}

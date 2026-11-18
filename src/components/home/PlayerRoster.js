@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import TroopIcon from './TroopIcons';
+import { formatMpRatio } from '../../lib/roster/mpRatio';
 
 // Source order: the four troop types as the stats site lists them.
 const MERIT_ORDER = ['infantry', 'cavalry', 'marksman', 'mage'];
@@ -183,6 +184,24 @@ export default function PlayerRoster({
                   </div>
                 )}
               </div>
+
+              {/* Far right and full height of both lines: the percentage is
+                  the row's headline number and its label sits underneath.
+                  Rows from a read that could not resolve merits (the lean
+                  payload) simply leave it out. */}
+              {player.mpRatio !== null && player.mpRatio !== undefined && (
+                <div
+                  className="flex shrink-0 flex-col items-end justify-center gap-0.5 self-stretch border-l border-gray-800 pl-3"
+                  title={`Merits / power x 100 · ${Number(player.meritsTotal ?? 0).toLocaleString()} merits on ${player.stats?.Power || 'unknown'} power`}
+                >
+                  <span className="font-mono text-base font-bold leading-none tabular-nums text-amber-200">
+                    {formatMpRatio(player.mpRatio)}
+                  </span>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gray-600">
+                    M/P Ratio
+                  </span>
+                </div>
+              )}
             </Link>
           </li>
         );
